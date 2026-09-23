@@ -1,0 +1,98 @@
+rules_version = '2';
+
+// قواعد أمان Firestore لنظام العميد الإلكتروني لمتابعة العجلات.
+// انسخ هذا الملف كاملاً إلى Firebase Console > Firestore Database > Rules ثم اضغط Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userPath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function me() { return get(userPath()).data; }
+    function active() { return signedIn() && exists(userPath()) && me().active == true; }
+    function hasRole(roles) { return active() && me().role in roles; }
+    function bootstrapping() { return !exists(/databases/$(database)/documents/config/general); }
+    function onlyKeys(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    // الإعدادات والمواقع: القراءة متاحة لعرض شاشة الدخول أو التهيئة الأولى.
+    match /config/general {
+      allow read: if true;
+      // التهيئة الأولى: تُنشأ مع حساب مدير النظام الأول في العملية نفسها.
+      allow create: if signedIn() && bootstrapping()
+        && getAfter(userPath()).data.role == 'admin';
+      allow update: if hasRole(['admin']);
+      allow delete: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if hasRole(['admin'])
+        || (signedIn() && request.auth.uid == uid && bootstrapping()
+            && request.resource.data.role == 'admin'
+            && existsAfter(/databases/$(database)/documents/config/general));
+      allow update: if hasRole(['admin']);
+      allow delete: if false;
+    }
+
+    match /vehicles/{id} {
+      allow read: if active();
+      allow create, update: if hasRole(['admin', 'fleet']);
+      allow delete: if hasRole(['admin']);
+    }
+
+    match /drivers/{id} {
+      allow read: if active();
+      allow create, update: if hasRole(['admin', 'fleet']);
+      allow delete: if hasRole(['admin']);
+    }
+
+    // الحركة: الاستعلامات تسجّل في مواقعها فقط، وباسمها.
+    match /movements/{id} {
+      allow read: if active();
+      allow create: if (hasRole(['admin', 'fleet'])
+          || (hasRole(['gate']) && request.resource.data.locationId in me().locations))
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.direction in ['out', 'in'];
+      allow update: if hasRole(['admin', 'fleet']);
+      allow delete: if hasRole(['admin']);
+    }
+
+    // الطلبات (وقود / صيانة / غسل)
+    match /requests/{id} {
+      allow read: if active();
+      allow create: if request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.type in ['fuel', 'maintenance', 'wash']
+        && (hasRole(['admin', 'fleet'])
+            || (hasRole(['driver'])
+                && request.resource.data.driverId == me().driverId
+                && request.resource.data.status == 'new'));
+      allow update: if hasRole(['admin', 'fleet'])
+        || (hasRole(['finance'])
+            && resource.data.status == 'awaiting_finance'
+            && request.resource.data.status in ['done', 'rejected']
+            && onlyKeys(['status', 'history', 'updatedAt', 'doneAt', 'financeApprovedAmount', 'financeBy', 'financeAt', 'rejectReason', 'rejectedBy']));
+      allow delete: if hasRole(['admin']);
+    }
+
+    // صور الوصولات والعجلات (مضغوطة داخل المتصفح نحو 150KB)
+    match /attachments/{id} {
+      allow read: if active();
+      allow create: if active() && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.data is string && request.resource.data.data.size() < 400000;
+      allow update, delete: if hasRole(['admin']);
+    }
+
+    // نقاط السائقين وتقييمهم
+    match /driverPoints/{id} {
+      allow read: if active();
+      allow create: if hasRole(['admin', 'fleet']) && request.resource.data.by == request.auth.uid;
+      allow update, delete: if hasRole(['admin']);
+    }
+
+    // سجل التدقيق: إضافة فقط، ولا يُعدَّل ولا يُحذف.
+    match /audit/{id} {
+      allow read: if hasRole(['admin']);
+      allow create: if active() && request.resource.data.by == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}

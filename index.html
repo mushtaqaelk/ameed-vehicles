@@ -1,0 +1,2706 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>نظام العميد الإلكتروني لمتابعة العجلات</title>
+<meta name="theme-color" content="#0B5D4C">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="عجلات العميد">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/logo-light.png">
+<link rel="apple-touch-icon" href="assets/logo-light.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Naskh+Arabic:wght@400;700&family=Tajawal:wght@400;500;700;900&display=swap">
+
+<!--
+  ====================================================================
+  خطوات التشغيل (التفاصيل الكاملة في README.md):
+  1) أنشئ مشروع Firebase جديداً باسم ameed-vehicles.
+  2) فعّل Authentication > Sign-in method > Email/Password.
+  3) فعّل Firestore Database، ثم انسخ محتوى الملف firestore.rules إلى
+     تبويب Rules واضغط Publish.
+  4) أضف "تطبيق ويب" وانسخ القيم إلى المتغير firebaseConfig أدناه.
+  5) افتح الصفحة: ستظهر شاشة "إنشاء حساب مدير النظام الأول".
+  ما دام firebaseConfig غير مُعدّ، يعمل النظام في "وضع العرض التجريبي"
+  على قاعدة بيانات محلية داخل المتصفح، ببيانات تجريبية.
+  ====================================================================
+-->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+:root{
+  --bg:#F6F3EC; --surface:#FFFFFF; --surface-2:#FBF9F4; --surface-3:#F0ECE1;
+  --ink:#1C2624; --ink-soft:#5B6862; --ink-faint:#8A958F;
+  --border:#E2DDCE; --border-strong:#CFC8B4;
+  --accent:#0B5D4C; --accent-strong:#08483B; --accent-soft:#E3EFE9; --accent-ink:#06392E;
+  --free:#1E8A5F; --free-soft:#E3F3EA;
+  --busy:#B23A3A; --busy-soft:#FBEAEA;
+  --pending:#A5750A; --pending-soft:#FBF1DC;
+  --rejected:#7C7466; --rejected-soft:#EFEBE2;
+  --info:#2D5F9A; --info-soft:#E4EDF8;
+  --shadow-sm:0 1px 2px rgba(20,30,28,.07);
+  --shadow-md:0 10px 28px -12px rgba(20,30,28,.22);
+  --radius:14px; --radius-sm:9px;
+  --font-display:'Amiri','Noto Naskh Arabic',serif;
+  --font-body:'Tajawal','Segoe UI',sans-serif;
+  --logo-light:url("assets/logo-light.png");
+  --logo-dark:url("assets/logo-dark.png");
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101614; --surface:#182220; --surface-2:#1C2724; --surface-3:#20302B;
+    --ink:#ECE9DE; --ink-soft:#A9B3AE; --ink-faint:#78847E;
+    --border:#2A3532; --border-strong:#374440;
+    --accent:#3FB393; --accent-strong:#57C7A6; --accent-soft:#1C332C; --accent-ink:#8FE2C6;
+    --free:#3FB393; --free-soft:#17332A;
+    --busy:#E0897C; --busy-soft:#3A211F;
+    --pending:#E0B94D; --pending-soft:#3A2F15;
+    --rejected:#9AA39D; --rejected-soft:#242C29;
+    --info:#8DB6E8; --info-soft:#1D2A3A;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+    --shadow-md:0 14px 32px -14px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101614; --surface:#182220; --surface-2:#1C2724; --surface-3:#20302B;
+  --ink:#ECE9DE; --ink-soft:#A9B3AE; --ink-faint:#78847E;
+  --border:#2A3532; --border-strong:#374440;
+  --accent:#3FB393; --accent-strong:#57C7A6; --accent-soft:#1C332C; --accent-ink:#8FE2C6;
+  --free:#3FB393; --free-soft:#17332A;
+  --busy:#E0897C; --busy-soft:#3A211F;
+  --pending:#E0B94D; --pending-soft:#3A2F15;
+  --rejected:#9AA39D; --rejected-soft:#242C29;
+  --info:#8DB6E8; --info-soft:#1D2A3A;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow-md:0 14px 32px -14px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box;}
+html{background:var(--bg); -webkit-text-size-adjust:100%;}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--font-body);
+}
+#app{
+  direction:rtl; unicode-bidi:isolate; text-align:right;
+  min-height:100%; padding:16px 16px 64px; max-width:1180px; margin:0 auto;
+  display:flex; flex-direction:column; gap:18px;
+}
+h1,h2,h3{font-family:var(--font-display); text-wrap:balance; margin:0; color:var(--ink);}
+p{margin:0;}
+button{font-family:inherit;}
+::selection{background:var(--accent-soft); color:var(--accent-ink);}
+.num, .plate{font-variant-numeric:tabular-nums; direction:ltr; unicode-bidi:isolate;}
+
+/* ---------- top bar ---------- */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  flex-wrap:wrap; padding-block:4px;
+}
+.brand{display:flex; align-items:center; gap:12px;}
+.brand-mark{flex:none; width:46px; height:46px; background-size:contain; background-repeat:no-repeat; background-position:center;}
+.brand-mark-light{background-image:var(--logo-light);}
+.brand-mark-dark{background-image:var(--logo-dark); display:none;}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .brand-mark-light{ display:none; }
+  :root:not([data-theme="light"]) .brand-mark-dark{ display:block; }
+}
+:root[data-theme="dark"] .brand-mark-light{ display:none; }
+:root[data-theme="dark"] .brand-mark-dark{ display:block; }
+.brand-text .eyebrow{
+  font-size:12.5px; letter-spacing:.06em; color:var(--ink-soft); font-weight:500;
+}
+.brand-text h1{font-size:21px; line-height:1.25; margin-top:2px;}
+.session{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.role-pill{
+  display:inline-flex; align-items:center; gap:8px; background:var(--surface);
+  border:1px solid var(--border); border-radius:999px; padding:7px 14px;
+  font-size:13.5px; color:var(--ink-soft); box-shadow:var(--shadow-sm);
+}
+.role-pill strong{color:var(--ink); font-weight:700;}
+.dot{width:8px; height:8px; border-radius:50%; background:var(--accent); flex:none;}
+.dot.offline{background:var(--busy);}
+
+/* ---------- buttons ---------- */
+.btn{
+  border:1px solid var(--border-strong); background:var(--surface); color:var(--ink);
+  border-radius:10px; padding:10px 16px; font-size:14px; font-weight:700; cursor:pointer;
+  min-height:42px; display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  transition:transform .08s ease, background .15s ease, border-color .15s ease;
+}
+.btn:hover{border-color:var(--accent);}
+.btn:active{transform:scale(.97);}
+.btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+.btn-primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+.btn-primary:hover{background:var(--accent-strong); border-color:var(--accent-strong);}
+.btn-ghost{background:transparent; border-color:transparent; color:var(--ink-soft);}
+.btn-ghost:hover{color:var(--accent); border-color:var(--border);}
+.btn-danger{color:var(--busy); border-color:var(--busy-soft);}
+.btn-danger:hover{background:var(--busy-soft); border-color:var(--busy);}
+.btn-ok{color:var(--free); border-color:var(--free-soft);}
+.btn-ok:hover{background:var(--free-soft); border-color:var(--free);}
+.btn-sm{padding:6px 12px; font-size:12.5px; border-radius:8px; min-height:34px;}
+.btn-lg{padding:14px 20px; font-size:16px; min-height:54px; border-radius:12px;}
+.btn-block{width:100%;}
+.btn[disabled]{opacity:.45; cursor:not-allowed;}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex; gap:6px; border-bottom:1px solid var(--border); overflow-x:auto; scrollbar-width:none;}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{
+  background:transparent; border:none; border-bottom:2.5px solid transparent; white-space:nowrap;
+  padding:11px 8px; margin-bottom:-1px; font-size:14.5px; font-weight:700;
+  color:var(--ink-faint); cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+}
+.tab:hover{color:var(--ink);}
+.tab.active{color:var(--accent-strong); border-bottom-color:var(--accent);}
+.tab-count{
+  background:var(--busy); color:#fff; border-radius:999px; font-size:11px; font-weight:800;
+  min-width:19px; height:19px; padding:0 5px; display:inline-flex; align-items:center; justify-content:center;
+}
+
+/* ---------- generic ---------- */
+.panel{display:flex; flex-direction:column; gap:16px;}
+.card{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px 18px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:12px;
+}
+.card h2{font-size:17px;}
+.card h3{font-size:15px;}
+.muted{color:var(--ink-soft); font-size:13.5px;}
+.faint{color:var(--ink-faint); font-size:12.5px;}
+.row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.row-between{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+.stack{display:flex; flex-direction:column; gap:8px;}
+hr.sep{border:none; border-top:1px solid var(--border); margin:2px 0; width:100%;}
+.grow{flex:1; min-width:0;}
+
+/* ---------- stats ---------- */
+.stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px;}
+.stat-tile{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 16px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:4px;
+  border-inline-start:4px solid var(--border-strong); text-align:inherit; cursor:default;
+}
+button.stat-tile{cursor:pointer; font-family:inherit; color:inherit;}
+.stat-tile[data-tone="free"]{border-inline-start-color:var(--free);}
+.stat-tile[data-tone="busy"]{border-inline-start-color:var(--busy);}
+.stat-tile[data-tone="pending"]{border-inline-start-color:var(--pending);}
+.stat-tile[data-tone="info"]{border-inline-start-color:var(--info);}
+.stat-tile .v{font-size:28px; font-weight:900; font-variant-numeric:tabular-nums; color:var(--ink);}
+.stat-tile .l{font-size:13px; color:var(--ink-soft); font-weight:700;}
+
+/* ---------- vehicle / live grid ---------- */
+.grid-cards{display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px;}
+.v-card{
+  border:1px solid var(--border); border-radius:var(--radius); padding:13px 15px;
+  background:var(--surface); display:flex; flex-direction:column; gap:7px;
+  border-inline-start:4px solid var(--border-strong);
+}
+.v-card[data-status="in"]{border-inline-start-color:var(--free);}
+.v-card[data-status="out"]{border-inline-start-color:var(--info);}
+.v-card[data-status="late"]{border-inline-start-color:var(--busy);}
+.v-card[data-status="maint"]{border-inline-start-color:var(--pending);}
+.v-head{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+.v-plate{font-weight:900; font-size:16px;}
+.v-detail{font-size:13px; color:var(--ink-soft); line-height:1.65;}
+.v-detail b{color:var(--ink); font-weight:700;}
+.status-pill{
+  font-size:11.5px; font-weight:800; padding:3px 10px; border-radius:999px; white-space:nowrap;
+  background:var(--surface-3); color:var(--ink-soft);
+}
+.status-pill.free, .status-pill.done, .status-pill.in, .status-pill.active{background:var(--free-soft); color:var(--free);}
+.status-pill.busy, .status-pill.late, .status-pill.broken{background:var(--busy-soft); color:var(--busy);}
+.status-pill.pending, .status-pill.new, .status-pill.maintenance, .status-pill.awaiting_finance{background:var(--pending-soft); color:var(--pending);}
+.status-pill.rejected{background:var(--rejected-soft); color:var(--rejected);}
+.status-pill.out, .status-pill.approved, .status-pill.in_progress{background:var(--info-soft); color:var(--info);}
+.group-title{font-weight:800; font-size:14px; color:var(--accent-strong); margin-top:4px;}
+
+/* ---------- alerts ---------- */
+.alert{
+  border-radius:var(--radius-sm); padding:10px 12px; font-size:13.5px; display:flex; gap:8px; align-items:flex-start;
+  background:var(--pending-soft); color:var(--ink); border:1px solid transparent;
+}
+.alert.danger{background:var(--busy-soft);}
+.alert.info{background:var(--info-soft);}
+.alert b{font-weight:800;}
+.alert .ic{flex:none;}
+
+/* ---------- chips ---------- */
+.chip-row{display:flex; gap:8px; flex-wrap:wrap;}
+.chip{
+  border:1px solid var(--border-strong); background:var(--surface); color:var(--ink-soft);
+  border-radius:999px; padding:8px 15px; font-size:13.5px; font-weight:700; cursor:pointer; min-height:38px;
+}
+.chip:hover{color:var(--ink);}
+.chip.active{background:var(--accent); border-color:var(--accent); color:#fff;}
+
+/* ---------- forms ---------- */
+.form-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px;}
+.field{display:flex; flex-direction:column; gap:5px; min-width:0;}
+.field.full{grid-column:1/-1;}
+.field label{font-size:12.5px; font-weight:700; color:var(--ink-soft);}
+.field .help{font-size:11.5px; color:var(--ink-faint);}
+.field input, .field select, .field textarea, .input{
+  font-family:inherit; font-size:16px; padding:10px 12px; border-radius:9px; min-height:44px; width:100%;
+  border:1px solid var(--border-strong); background:var(--surface-2); color:var(--ink);
+}
+.field input:focus, .field select:focus, .field textarea:focus, .input:focus{
+  outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent);
+}
+.field textarea{resize:vertical; min-height:64px;}
+.checks{display:flex; flex-wrap:wrap; gap:8px;}
+.checks label{
+  display:inline-flex; gap:6px; align-items:center; font-size:14px; color:var(--ink); font-weight:500;
+  border:1px solid var(--border-strong); border-radius:9px; padding:8px 12px; background:var(--surface-2);
+}
+.seg{display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:8px;}
+.seg button{
+  border:2px solid var(--border-strong); background:var(--surface-2); color:var(--ink-soft);
+  border-radius:12px; padding:14px 8px; font-size:17px; font-weight:900; cursor:pointer; min-height:58px;
+}
+.seg button.on-out{border-color:var(--info); background:var(--info-soft); color:var(--info);}
+.seg button.on-in{border-color:var(--free); background:var(--free-soft); color:var(--free);}
+.seg button.on{border-color:var(--accent); background:var(--accent-soft); color:var(--accent-ink);}
+
+/* ---------- list items ---------- */
+.item{
+  border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px;
+  background:var(--surface); display:flex; flex-direction:column; gap:8px;
+}
+.item-top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;}
+.item-title{font-weight:800; font-size:14.5px;}
+.item-meta{font-size:12.8px; color:var(--ink-soft); display:flex; gap:6px 14px; flex-wrap:wrap;}
+.item-meta b{color:var(--ink);}
+.item-note{font-size:12.5px; color:var(--ink-soft); background:var(--surface-3); border-radius:8px; padding:6px 10px;}
+.item-actions{display:flex; gap:8px; flex-wrap:wrap;}
+.badge{
+  font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; background:var(--accent-soft); color:var(--accent-ink);
+}
+.timeline{font-size:12px; color:var(--ink-faint); display:flex; flex-direction:column; gap:3px; border-inline-start:2px solid var(--border); padding-inline-start:10px;}
+details summary{cursor:pointer; font-size:12.5px; color:var(--ink-soft); font-weight:700;}
+.stars{color:var(--pending); letter-spacing:1px;}
+.rank{
+  width:30px; height:30px; flex:none; border-radius:50%; background:var(--accent-soft); color:var(--accent-ink);
+  display:inline-flex; align-items:center; justify-content:center; font-weight:900; font-size:14px;
+}
+.points{font-size:22px; font-weight:900; font-variant-numeric:tabular-nums;}
+.points.low{color:var(--busy);} .points.mid{color:var(--pending);} .points.high{color:var(--free);}
+.photo{max-width:100%; max-height:260px; border-radius:var(--radius-sm); border:1px solid var(--border); object-fit:contain; background:var(--surface-2);}
+.kv{display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:13.5px;}
+.kv dt{color:var(--ink-soft); font-weight:700;}
+.kv dd{margin:0;}
+
+/* ---------- modal / toast ---------- */
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(10,15,14,.45); display:flex; align-items:center;
+  justify-content:center; padding:16px; z-index:50;
+}
+.modal{
+  background:var(--surface); border-radius:var(--radius); padding:20px; width:100%; max-width:440px;
+  box-shadow:var(--shadow-md); display:flex; flex-direction:column; gap:14px;
+  max-height:calc(100vh - 32px); overflow-y:auto; direction:rtl; text-align:right;
+}
+.modal.modal-wide{max-width:720px;}
+.modal h3{font-size:18px;}
+.modal-head{display:flex; justify-content:space-between; align-items:center; gap:10px;}
+@media (max-width:560px){
+  .modal-backdrop{padding:0; align-items:flex-end;}
+  .modal, .modal.modal-wide{max-width:none; border-radius:var(--radius) var(--radius) 0 0; max-height:92vh;}
+}
+.error-text{color:var(--busy); font-size:13px; font-weight:700;}
+.toast{
+  position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
+  background:var(--ink); color:var(--surface); padding:11px 20px; border-radius:999px;
+  font-size:13.5px; font-weight:700; box-shadow:var(--shadow-md); z-index:60; max-width:calc(100vw - 32px); text-align:center;
+}
+@media (prefers-reduced-motion:no-preference){
+  .modal{animation:pop .15s ease;}
+}
+@keyframes pop{from{transform:scale(.96); opacity:0;} to{transform:scale(1); opacity:1;}}
+.warn-box{
+  background:var(--pending-soft); color:var(--pending); border:1px solid var(--pending);
+  border-radius:9px; padding:10px 12px; font-size:13px; display:flex; flex-direction:column; gap:8px;
+}
+.demo-banner{
+  background:var(--info-soft); color:var(--info); border:1px solid var(--info); border-radius:var(--radius-sm);
+  padding:10px 14px; font-size:13px; font-weight:700;
+}
+.footnote{
+  text-align:center; color:var(--ink-faint); font-size:12px; padding-top:6px; line-height:1.7;
+}
+[hidden]{display:none !important;}
+
+/* ---------- login ---------- */
+.login-wrap{max-width:420px; width:100%; margin:20px auto 0;}
+.demo-users{display:grid; grid-template-columns:repeat(2,1fr); gap:8px;}
+
+/* ---------- tables ---------- */
+.file-drop{
+  border:1.5px dashed var(--border-strong); border-radius:var(--radius-sm); padding:14px 16px;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface-2);
+}
+.table-scroll{overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius-sm);}
+table.data-table{border-collapse:collapse; width:100%; font-size:13px;}
+table.data-table th, table.data-table td{
+  padding:8px 10px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap;
+}
+table.data-table th{background:var(--surface-2); color:var(--ink-soft); font-weight:800; font-size:12.5px;}
+table.data-table tr.row-error td{background:var(--busy-soft);}
+table.data-table tr.row-warn td{background:var(--pending-soft);}
+table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
+
+/* ---------- reports ---------- */
+.report-sheet{display:flex; flex-direction:column; gap:16px;}
+.report-head{display:flex; align-items:center; gap:14px; border-bottom:2px solid var(--accent); padding-bottom:12px;}
+.report-titles{display:flex; flex-direction:column; gap:2px;}
+.report-univ{font-family:var(--font-display); font-size:20px; font-weight:700; color:var(--ink);}
+.report-sub{font-size:12.5px; color:var(--ink-soft);}
+.report-title{font-size:15px; font-weight:800; color:var(--accent-strong); margin-top:4px;}
+.report-meta{display:flex; flex-wrap:wrap; gap:6px 18px; font-size:13.5px; color:var(--ink);}
+.report-meta b{color:var(--ink-soft); font-weight:700;}
+.report-stats{display:flex; gap:12px; flex-wrap:wrap;}
+.stat-box{
+  flex:1; min-width:130px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:12px 14px; text-align:center;
+}
+.stat-box.stat-total{background:var(--accent-soft); border-color:var(--accent);}
+.stat-num{font-size:20px; font-weight:900; color:var(--accent-strong); font-variant-numeric:tabular-nums;}
+.stat-label{font-size:12px; color:var(--ink-soft); margin-top:2px;}
+.report-section-title{font-size:14.5px; font-weight:800; color:var(--ink); margin-top:4px;}
+.report-sign{display:flex; justify-content:space-between; gap:20px; margin-top:26px; font-size:13px; color:var(--ink-soft);}
+.report-sign div{flex:1; text-align:center; border-top:1px dashed var(--border-strong); padding-top:8px;}
+
+@media print{
+  body *{ visibility:hidden; }
+  #printableReport, #printableReport *{ visibility:visible; }
+  #printableReport{ position:absolute; inset-inline-start:0; top:0; width:100%; border:none !important; box-shadow:none !important; }
+  .no-print{ display:none !important; }
+  .report-univ, .report-title, .stat-num{ color:#000 !important; }
+  .stat-box{ background:#fff !important; border:1px solid #999 !important; }
+  .report-head{ border-bottom-color:#000 !important; }
+  table.data-table{ width:100% !important; font-size:11px !important; }
+  table.data-table th, table.data-table td{ white-space:normal !important; padding:5px 6px !important; }
+  .table-scroll{ overflow:visible !important; }
+  @page{ size:landscape; margin:12mm; }
+  .report-logo-light{ display:block !important; }
+  .report-logo-dark{ display:none !important; }
+}
+.report-logo-light, .report-logo-dark{
+  width:52px; height:52px; flex:none; object-fit:contain;
+}
+.report-logo-dark{ display:none; }
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .report-logo-light{ display:none; }
+  :root:not([data-theme="light"]) .report-logo-dark{ display:block; }
+}
+:root[data-theme="dark"] .report-logo-light{ display:none; }
+:root[data-theme="dark"] .report-logo-dark{ display:block; }
+
+@media (max-width:560px){
+  #app{padding:12px 12px 56px; gap:14px;}
+  .brand-text h1{font-size:18px;}
+  .brand-text .eyebrow{font-size:11.5px;}
+  .card{padding:14px;}
+  .stat-grid{grid-template-columns:repeat(2,1fr);}
+  .stat-tile .v{font-size:24px;}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark brand-mark-light" role="img" aria-label="شعار جامعة العميد"></div>
+      <div class="brand-mark brand-mark-dark" role="img" aria-label="شعار جامعة العميد"></div>
+      <div class="brand-text">
+        <div class="eyebrow">جامعة العميد — الشؤون الإدارية والقانونية</div>
+        <h1>نظام العميد الإلكتروني لمتابعة العجلات</h1>
+      </div>
+    </div>
+    <div class="session">
+      <span class="role-pill" id="rolePill"><span class="dot" id="netDot"></span><span id="roleLabel">غير مسجّل</span></span>
+      <button class="btn btn-sm btn-ghost" id="themeBtn" type="button" title="تبديل المظهر">◐</button>
+      <button class="btn btn-sm" id="logoutBtn" type="button" hidden>خروج</button>
+    </div>
+  </div>
+
+  <div id="demoBanner" class="demo-banner" hidden>
+    وضع العرض التجريبي — البيانات محفوظة داخل هذا المتصفح فقط، ولم تُربط قاعدة البيانات الحقيقية بعد.
+  </div>
+
+  <nav class="tabs" id="tabs" hidden></nav>
+
+  <main id="main"></main>
+
+  <p class="footnote">نظام داخلي لمتابعة عجلات الجامعة — جامعة العميد، كربلاء.</p>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ====================================================================
+     الصق هنا إعدادات مشروع Firebase (Project settings > General >
+     Your apps > SDK setup and configuration > Config).
+     ما دام apiKey يبدأ بـ PASTE_ يعمل النظام في وضع العرض التجريبي.
+     ==================================================================== */
+  var firebaseConfig = {
+    apiKey: "PASTE_API_KEY",
+    authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
+    projectId: "PASTE_PROJECT_ID",
+    storageBucket: "PASTE_PROJECT_ID.firebasestorage.app",
+    messagingSenderId: "PASTE_SENDER_ID",
+    appId: "PASTE_APP_ID"
+  };
+
+  var DEMO = !firebaseConfig.apiKey || firebaseConfig.apiKey.indexOf('PASTE_') === 0 || /[?&]demo=1\b/.test(location.search);
+  var EMAIL_DOMAIN = 'ameed-vehicles.app';
+
+  var DEFAULT_SETTINGS = {
+    overdueHours: 12,       // تنبيه العجلة الخارجة منذ أكثر من X ساعة
+    expiryWarnDays: 30,     // تنبيه قرب انتهاء السنوية والتأمين
+    oilChangeKm: 5000,      // تبديل الدهن كل X كم
+    fuelOverusePct: 25,     // نسبة زيادة الاستهلاك عن معدل العجلة التي تُعدّ مخالفة
+    startPoints: 100,       // رصيد السائق الشهري
+    latePenalty: 5,         // خصم تأخر إرجاع العجلة
+    fuelPenalty: 5          // خصم زيادة استهلاك الوقود
+  };
+  var DEFAULT_LOCATIONS = [
+    {id:'gate-main', name:'البوابة الرئيسية'},
+    {id:'gate-back', name:'البوابة الخلفية'},
+    {id:'garage', name:'مرآب الجامعة'}
+  ];
+
+  var ROLES = ['admin','fleet','gate','finance','driver','viewer'];
+  var ROLE_LABEL = {admin:'مدير النظام', fleet:'مدير الآليات', gate:'الاستعلامات', finance:'المالية', driver:'سائق', viewer:'الإدارة العليا'};
+  var REQ_TYPE = {fuel:'وقود', maintenance:'صيانة', wash:'غسل وتنظيف'};
+  var REQ_ICON = {fuel:'⛽', maintenance:'🔧', wash:'🧽'};
+  var STATUS_LABEL = {'new':'جديد', approved:'موافق عليه', in_progress:'قيد التنفيذ', awaiting_finance:'بانتظار المالية', done:'منجز', rejected:'مرفوض'};
+  var OPEN_STATUSES = ['new','approved','in_progress','awaiting_finance'];
+  var FUEL_LABEL = {petrol:'بنزين', diesel:'كاز'};
+  var PAY_LABEL = {cash:'نقداً مع استرداد', coupon:'كوبونات', account:'حساب لدى المحطة'};
+  var VSTATUS_LABEL = {active:'فعّالة', maintenance:'في الصيانة', broken:'عاطلة'};
+  var WASH_KIND = {wash:'غسل خارجي', clean:'تنظيف داخلي', both:'غسل وتنظيف'};
+  var MONTH_AR = ['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
+
+  /* ---------------- DOM helpers ---------------- */
+  function $(id){ return document.getElementById(id); }
+  var PROP_ATTRS = {value:1, checked:1, selected:1, disabled:1, hidden:1, required:1, multiple:1, readOnly:1};
+  function el(tag, attrs, children){
+    var n = document.createElement(tag);
+    attrs = attrs || {};
+    Object.keys(attrs).forEach(function(k){
+      var v = attrs[k];
+      if(v === undefined || v === null || v === false && !PROP_ATTRS[k]) return;
+      if(k === 'class') n.className = v;
+      else if(k === 'html') n.innerHTML = v;
+      else if(k === 'text') n.textContent = v;
+      else if(k === 'style' && typeof v === 'object') Object.keys(v).forEach(function(s){ n.style[s] = v[s]; });
+      else if(k.indexOf('on') === 0 && typeof v === 'function') n.addEventListener(k.slice(2), v);
+      else if(PROP_ATTRS[k]) n[k] = v;
+      else n.setAttribute(k, v);
+    });
+    appendKids(n, children);
+    return n;
+  }
+  function appendKids(n, children){
+    (children||[]).forEach(function(c){
+      if(c === null || c === undefined || c === false) return;
+      if(Array.isArray(c)) appendKids(n, c);
+      else if(typeof c === 'string' || typeof c === 'number') n.appendChild(document.createTextNode(String(c)));
+      else n.appendChild(c);
+    });
+  }
+  function clear(n){ while(n.firstChild) n.removeChild(n.firstChild); return n; }
+  function pill(cls, text){ return el('span',{class:'status-pill '+(cls||''), text:text}); }
+
+  /* ---------------- formatting (أرقام غربية) ---------------- */
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function num(v){ var n = Number(v); return isFinite(n) ? n : 0; }
+  function fmtNum(v, digits){
+    return num(v).toLocaleString('en-US', {maximumFractionDigits: digits === undefined ? 0 : digits});
+  }
+  function fmtIQD(v){ return fmtNum(Math.round(num(v))) + ' د.ع'; }
+  function toDate(v){ if(!v) return null; var d = v instanceof Date ? v : new Date(v); return isNaN(d) ? null : d; }
+  function fmtISODate(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+  // التواريخ تُعزل باتجاه LTR (LRI…PDI) حتى لا تنقلب داخل الجمل العربية
+  function ltr(s){ return '\u2066'+s+'\u2069'; }
+  function stripIsolates(s){ return typeof s === 'string' ? s.replace(/[\u2066-\u2069]/g,'') : s; }
+  function fmtDate(v){ var d = toDate(v); return d ? ltr(fmtISODate(d)) : '—'; }
+  function fmtTime(v){ var d = toDate(v); return d ? ltr(pad(d.getHours())+':'+pad(d.getMinutes())) : '—'; }
+  function fmtDT(v){ var d = toDate(v); return d ? ltr(fmtISODate(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes())) : '—'; }
+  function fmtDuration(ms){
+    if(!(ms >= 0)) return '—';
+    var mins = Math.floor(ms/60000), h = Math.floor(mins/60), m = mins%60;
+    if(h >= 48) return Math.floor(h/24)+' يوم و'+(h%24)+' س';
+    if(h > 0) return h+' س '+m+' د';
+    return m+' د';
+  }
+  function monthKey(v){ var d = toDate(v); return d ? d.getFullYear()+'-'+pad(d.getMonth()+1) : ''; }
+  function monthLabel(key){ var p = String(key).split('-'); return MONTH_AR[Number(p[1])-1]+' '+p[0]; }
+  function nowISO(){ return new Date().toISOString(); }
+  function daysUntil(dateStr){
+    var d = toDate(dateStr); if(!d) return null;
+    var t = new Date(); t.setHours(0,0,0,0); d.setHours(0,0,0,0);
+    return Math.round((d - t)/86400000);
+  }
+  function startOfDay(s){ var d = toDate(s); d.setHours(0,0,0,0); return d; }
+  function endOfDay(s){ var d = toDate(s); d.setHours(23,59,59,999); return d; }
+  function inRange(v, from, to){ var d = toDate(v); return !!d && d >= from && d <= to; }
+  function uid(prefix){ return (prefix||'')+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  function slug(s){ return String(s||'').trim().toLowerCase().replace(/\s+/g,'-').replace(/[^\w؀-ۿ-]/g,'') || uid('loc'); }
+  function normName(s){ return String(s||'').trim().replace(/\s+/g,' ').replace(/[أإآ]/g,'ا').replace(/ة$/,'ه').toLowerCase(); }
+
+  function showToast(msg){
+    var root = $('toastRoot');
+    clear(root);
+    var t = el('div',{class:'toast', role:'status', text:msg});
+    root.appendChild(t);
+    setTimeout(function(){ if(root.contains(t)) root.removeChild(t); }, 3400);
+  }
+
+  /* ====================================================================
+     قاعدة بيانات تجريبية داخل المتصفح (تحاكي الجزء المستخدم من Firebase
+     compat SDK). تُستخدم في وضع العرض التجريبي وفي الاختبارات فقط.
+     ==================================================================== */
+  function makeDemoFirebase(){
+    var KEY = 'ameed_vehicles_demo_db_v1', AUTH_KEY = 'ameed_vehicles_demo_auth_v1';
+    var store = null;
+    try{ store = JSON.parse(localStorage.getItem(KEY) || 'null'); }catch(e){}
+    if(!store || !store.cols) store = {cols:{}, auth:{}};
+    function persist(){ try{ localStorage.setItem(KEY, JSON.stringify(store)); }catch(e){} }
+    function clone(o){ return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
+    function col(name){ return store.cols[name] || (store.cols[name] = {}); }
+    function newId(){ return 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,9); }
+    var listeners = [], dirty = {}, scheduled = false;
+    function docSnap(name, id){
+      var d = col(name)[id];
+      return {id:id, exists:d !== undefined, data:function(){ return clone(d); }, ref:docRef(name, id)};
+    }
+    function colSnap(name){
+      var docs = Object.keys(col(name)).map(function(id){ return docSnap(name, id); });
+      return {docs:docs, size:docs.length, empty:!docs.length, forEach:function(f){ docs.forEach(f); }};
+    }
+    function fire(l){ try{ l.cb(l.docId != null ? docSnap(l.col, l.docId) : colSnap(l.col)); }catch(e){ console.error(e); } }
+    function notify(name){
+      dirty[name] = true;
+      if(scheduled) return;
+      scheduled = true;
+      setTimeout(function(){
+        scheduled = false; var d = dirty; dirty = {}; persist();
+        listeners.slice().forEach(function(l){ if(d[l.col]) fire(l); });
+      }, 0);
+    }
+    function listen(l){
+      listeners.push(l); setTimeout(function(){ fire(l); }, 0);
+      return function(){ var i = listeners.indexOf(l); if(i >= 0) listeners.splice(i,1); };
+    }
+    function docRef(name, id){
+      return {
+        id:id,
+        get:function(){ return Promise.resolve(docSnap(name, id)); },
+        set:function(data, opts){
+          var c = col(name);
+          if(opts && opts.merge && c[id]) Object.keys(data).forEach(function(k){ c[id][k] = clone(data[k]); });
+          else c[id] = clone(data);
+          notify(name); return Promise.resolve();
+        },
+        update:function(data){
+          var c = col(name);
+          if(!c[id]) return Promise.reject(new Error('not-found'));
+          Object.keys(data).forEach(function(k){ c[id][k] = clone(data[k]); });
+          notify(name); return Promise.resolve();
+        },
+        'delete':function(){ delete col(name)[id]; notify(name); return Promise.resolve(); },
+        onSnapshot:function(cb){ return listen({col:name, docId:id, cb:cb}); }
+      };
+    }
+    function colRef(name){
+      return {
+        doc:function(id){ return docRef(name, id || newId()); },
+        add:function(data){ var id = newId(); col(name)[id] = clone(data); notify(name); return Promise.resolve(docRef(name, id)); },
+        get:function(){ return Promise.resolve(colSnap(name)); },
+        onSnapshot:function(cb){ return listen({col:name, docId:null, cb:cb}); }
+      };
+    }
+    var db = {
+      collection:colRef,
+      doc:function(path){ var p = path.split('/'); return docRef(p[0], p[1]); },
+      batch:function(){
+        var ops = [];
+        return {
+          set:function(r,d,o){ ops.push(function(){ r.set(d,o); }); },
+          update:function(r,d){ ops.push(function(){ r.update(d); }); },
+          'delete':function(r){ ops.push(function(){ r['delete'](); }); },
+          commit:function(){ ops.forEach(function(f){ f(); }); return Promise.resolve(); }
+        };
+      },
+      enablePersistence:function(){ return Promise.resolve(); }
+    };
+    function authErr(code){ var e = new Error(code); e.code = code; return e; }
+    function makeAuth(primary){
+      var current = null, subs = [];
+      if(primary){ try{ current = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null'); }catch(e){} }
+      function setUser(u){
+        current = u;
+        if(primary){ try{ localStorage.setItem(AUTH_KEY, JSON.stringify(u)); }catch(e){} }
+        subs.forEach(function(cb){ setTimeout(function(){ cb(current); }, 0); });
+      }
+      return {
+        get currentUser(){ return current; },
+        onAuthStateChanged:function(cb){ subs.push(cb); setTimeout(function(){ cb(current); }, 0); return function(){}; },
+        signInWithEmailAndPassword:function(email, pw){
+          var a = store.auth[String(email).toLowerCase()];
+          if(!a || a.password !== pw) return Promise.reject(authErr('auth/invalid-credential'));
+          setUser({uid:a.uid, email:String(email).toLowerCase()});
+          return Promise.resolve({user:current});
+        },
+        createUserWithEmailAndPassword:function(email, pw){
+          email = String(email).toLowerCase();
+          if(store.auth[email]) return Promise.reject(authErr('auth/email-already-in-use'));
+          if(String(pw).length < 6) return Promise.reject(authErr('auth/weak-password'));
+          var u = {uid:'u'+newId(), email:email};
+          store.auth[email] = {uid:u.uid, password:pw}; persist();
+          setUser(u);
+          return Promise.resolve({user:u});
+        },
+        signOut:function(){ setUser(null); return Promise.resolve(); }
+      };
+    }
+    var apps = {};
+    function makeApp(name){
+      var auth = makeAuth(name === '[DEFAULT]');
+      return {name:name, auth:function(){ return auth; }, firestore:function(){ return db; }, 'delete':function(){ delete apps[name]; return Promise.resolve(); }};
+    }
+    return {
+      _demo:true,
+      _store:function(){ return store; },
+      _reset:function(){ store = {cols:{}, auth:{}}; persist(); try{ localStorage.removeItem(AUTH_KEY); }catch(e){} },
+      _setAuthUser:function(email, uid, pw){ store.auth[email] = {uid:uid, password:pw}; persist(); },
+      get apps(){ return Object.keys(apps).map(function(k){ return apps[k]; }); },
+      initializeApp:function(cfg, name){ name = name || '[DEFAULT]'; return apps[name] || (apps[name] = makeApp(name)); },
+      app:function(name){ return apps[name || '[DEFAULT]']; }
+    };
+  }
+
+  /* ---------------- state ---------------- */
+  var FB = null, app = null, auth = null, db = null;
+  var S = {
+    authUser:null, profile:null, profileLoaded:false,
+    config:null, configLoaded:false,
+    users:[], vehicles:[], drivers:[], movements:[], requests:[], points:[], audit:[],
+    tab:'home', unsub:[]
+  };
+  var derived = null; // يُعاد حسابه عند كل تغيير في البيانات
+  var tabState = {requestsFilter:'mine', requestsType:'', vehiclesFilter:'all', vehiclesSearch:'', pointsMonth:monthKey(new Date()), financeMonth:monthKey(new Date()), reportType:'vehicle'};
+
+  function settings(){ var s = {}; var c = (S.config && S.config.settings) || {}; Object.keys(DEFAULT_SETTINGS).forEach(function(k){ s[k] = c[k] !== undefined && c[k] !== '' ? num(c[k]) : DEFAULT_SETTINGS[k]; }); return s; }
+  function locations(){ return (S.config && S.config.locations && S.config.locations.length) ? S.config.locations : DEFAULT_LOCATIONS; }
+  function locationName(id){ var l = locations().find(function(x){ return x.id === id; }); return l ? l.name : (id || '—'); }
+  function vehicleById(id){ return derived && derived.vehicleMap[id] || null; }
+  function driverById(id){ return derived && derived.driverMap[id] || null; }
+  function plateText(v){ return v ? (v.plate + (v.province ? ' — '+v.province : '')) : '—'; }
+  function vehicleLabel(v){ return v ? v.plate + ' · ' + [v.make, v.model].filter(Boolean).join(' ') : 'عجلة محذوفة'; }
+  function driverLabel(id, name){ var d = id && driverById(id); return d ? d.name : (name || '—'); }
+
+  /* ---------------- permissions ---------------- */
+  function role(){ return S.profile ? S.profile.role : null; }
+  function isAdmin(){ return role() === 'admin'; }
+  function isFleet(){ return role() === 'admin' || role() === 'fleet'; }
+  function isFinance(){ return role() === 'admin' || role() === 'finance'; }
+  function canRecordMovement(){ return ['admin','fleet','gate'].indexOf(role()) >= 0; }
+  function canCreateRequest(){ return ['admin','fleet','driver'].indexOf(role()) >= 0; }
+  function allowedLocations(){
+    if(role() === 'gate') return locations().filter(function(l){ return (S.profile.locations||[]).indexOf(l.id) >= 0; });
+    return locations();
+  }
+  function tabsForRole(){
+    var all = {
+      admin:['home','gate','requests','vehicles','drivers','finance','reports','admin'],
+      fleet:['home','gate','requests','vehicles','drivers','reports'],
+      gate:['home','gate'],
+      finance:['home','requests','finance','reports'],
+      driver:['home','requests'],
+      viewer:['home','vehicles','drivers','finance','reports']
+    };
+    return all[role()] || ['home'];
+  }
+  var TAB_LABEL = {home:'الرئيسية', gate:'الحركة', requests:'الطلبات', vehicles:'العجلات', drivers:'السائقون', finance:'المالية', reports:'التقارير', admin:'الإدارة'};
+
+  /* هل الطلب ينتظر إجراءً من المستخدم الحالي؟ */
+  function awaitsMe(r){
+    var rl = role();
+    if(r.status === 'awaiting_finance') return rl === 'finance' || rl === 'admin';
+    if(r.status === 'new' || r.status === 'approved' || r.status === 'in_progress') return rl === 'fleet' || rl === 'admin';
+    return false;
+  }
+  function isMyRequest(r){
+    if(!S.profile) return false;
+    return r.createdBy === S.authUser.uid || (S.profile.driverId && r.driverId === S.profile.driverId);
+  }
+  function visibleRequests(){
+    if(role() === 'driver') return S.requests.filter(isMyRequest);
+    return S.requests;
+  }
+  function pendingCountForMe(){
+    if(role() === 'driver') return visibleRequests().filter(function(r){ return OPEN_STATUSES.indexOf(r.status) >= 0; }).length;
+    return S.requests.filter(awaitsMe).length;
+  }
+
+  /* ---------------- derived data ---------------- */
+  function computeDerived(){
+    var st = settings(), now = Date.now(), overdueMs = st.overdueHours*3600000;
+    var vehicleMap = {}, driverMap = {};
+    S.vehicles.forEach(function(v){ vehicleMap[v.id] = v; });
+    S.drivers.forEach(function(d){ driverMap[d.id] = d; });
+
+    var movs = S.movements.slice().sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); });
+    var byVehicle = {};
+    movs.forEach(function(m){ (byVehicle[m.vehicleId] = byVehicle[m.vehicleId] || []).push(m); });
+
+    // الرحلات: كل خروج مع أول دخول بعده للعجلة نفسها
+    var trips = [], lastMov = {};
+    Object.keys(byVehicle).forEach(function(vid){
+      var list = byVehicle[vid], open = null;
+      list.forEach(function(m){
+        if(m.direction === 'out'){
+          if(open) trips.push(open);
+          open = {vehicleId:vid, driverId:m.driverId||'', driverName:m.driverName||'', outAt:m.at, outLoc:m.locationId, purpose:m.purpose||'', outOdo:m.odometer||null, inAt:null, inLoc:null, inOdo:null, demo:!!m.demo};
+        } else if(m.direction === 'in'){
+          if(open){ open.inAt = m.at; open.inLoc = m.locationId; open.inOdo = m.odometer||null; trips.push(open); open = null; }
+        }
+      });
+      if(open) trips.push(open);
+      lastMov[vid] = list[list.length-1];
+    });
+    trips.forEach(function(t){
+      var end = t.inAt ? toDate(t.inAt).getTime() : now;
+      t.durationMs = end - toDate(t.outAt).getTime();
+      t.late = t.durationMs > overdueMs;
+      t.km = (t.inOdo && t.outOdo && t.inOdo > t.outOdo) ? t.inOdo - t.outOdo : null;
+    });
+
+    // الحالة الآنية لكل عجلة
+    var live = {};
+    S.vehicles.forEach(function(v){
+      var m = lastMov[v.id];
+      var s = {vehicle:v, last:m||null, where:'in', locationId:m ? m.locationId : null, since:m ? m.at : null, driverId:'', driverName:'', purpose:''};
+      if(m && m.direction === 'out'){
+        s.where = 'out'; s.driverId = m.driverId||''; s.driverName = m.driverName||''; s.purpose = m.purpose||'';
+        s.outMs = now - toDate(m.at).getTime(); s.late = s.outMs > overdueMs;
+      }
+      live[v.id] = s;
+    });
+
+    // العداد الحالي: أعلى قراءة معروفة
+    var odo = {};
+    S.vehicles.forEach(function(v){ odo[v.id] = num(v.odometer); });
+    S.movements.forEach(function(m){ if(m.odometer && odo[m.vehicleId] !== undefined) odo[m.vehicleId] = Math.max(odo[m.vehicleId], num(m.odometer)); });
+    S.requests.forEach(function(r){ if(r.odometer && r.status !== 'rejected' && odo[r.vehicleId] !== undefined) odo[r.vehicleId] = Math.max(odo[r.vehicleId], num(r.odometer)); });
+
+    // معدل استهلاك الوقود (كم/لتر) — طريقة الخزان الممتلئ: المسافة منذ التعبئة السابقة ÷ لترات هذه التعبئة
+    var fuelEff = {}, vehicleAvg = {};
+    var fuelByV = {};
+    S.requests.forEach(function(r){
+      if(r.type === 'fuel' && r.status !== 'rejected' && num(r.odometer) > 0 && num(r.liters) > 0) (fuelByV[r.vehicleId] = fuelByV[r.vehicleId] || []).push(r);
+    });
+    Object.keys(fuelByV).forEach(function(vid){
+      var list = fuelByV[vid].sort(function(a,b){ return num(a.odometer) - num(b.odometer); });
+      var dist = 0, lit = 0, n = 0;
+      for(var i=1; i<list.length; i++){
+        var d = num(list[i].odometer) - num(list[i-1].odometer);
+        if(d <= 0) continue;
+        var k = d / num(list[i].liters);
+        fuelEff[list[i].id] = k; dist += d; lit += num(list[i].liters); n++;
+      }
+      if(n > 0) vehicleAvg[vid] = {kmpl:dist/lit, samples:n};
+    });
+    var fuelOver = {};
+    Object.keys(fuelEff).forEach(function(rid){
+      var r = S.requests.find(function(x){ return x.id === rid; });
+      var avg = vehicleAvg[r.vehicleId];
+      if(avg && avg.samples >= 3 && fuelEff[rid] < avg.kmpl * (1 - st.fuelOverusePct/100)) fuelOver[rid] = true;
+    });
+
+    derived = {vehicleMap:vehicleMap, driverMap:driverMap, trips:trips, live:live, odo:odo, fuelEff:fuelEff, vehicleAvg:vehicleAvg, fuelOver:fuelOver};
+    return derived;
+  }
+
+  function currentOdo(vid){ return derived && derived.odo[vid] || 0; }
+
+  /* نقاط السائق لشهر معيّن */
+  function driverScore(driverId, mKey){
+    var st = settings();
+    var manual = S.points.filter(function(p){ return p.driverId === driverId && p.month === mKey && p.kind === 'manual'; });
+    var manualSum = manual.reduce(function(a,p){ return a + num(p.delta); }, 0);
+    var lateTrips = derived.trips.filter(function(t){ return t.driverId === driverId && t.late && monthKey(t.outAt) === mKey; });
+    var overFuel = S.requests.filter(function(r){ return r.type === 'fuel' && r.driverId === driverId && derived.fuelOver[r.id] && monthKey(r.createdAt) === mKey; });
+    var starRecs = S.points.filter(function(p){ return p.driverId === driverId && p.month === mKey && p.kind === 'stars'; })
+      .sort(function(a,b){ return String(b.at).localeCompare(String(a.at)); });
+    var trips = derived.trips.filter(function(t){ return t.driverId === driverId && monthKey(t.outAt) === mKey; });
+    var total = st.startPoints + manualSum - lateTrips.length*st.latePenalty - overFuel.length*st.fuelPenalty;
+    return {total:total, manual:manual, manualSum:manualSum, late:lateTrips, overFuel:overFuel, stars:starRecs[0] ? num(starRecs[0].stars) : 0, trips:trips};
+  }
+
+  /* التنبيهات */
+  function computeAlerts(){
+    var st = settings(), out = [];
+    S.vehicles.forEach(function(v){
+      var s = derived.live[v.id];
+      if(s && s.where === 'out' && s.late) out.push({tone:'danger', icon:'⏰', vid:v.id, text:[el('b',{text:v.plate}),' خارج الجامعة منذ '+fmtDuration(s.outMs)+' مع '+driverLabel(s.driverId, s.driverName)]});
+      [['registrationExpiry','السنوية'],['insuranceExpiry','التأمين']].forEach(function(p){
+        var d = daysUntil(v[p[0]]);
+        if(d === null) return;
+        if(d < 0) out.push({tone:'danger', icon:'📄', vid:v.id, text:[el('b',{text:v.plate}),' انتهت '+p[1]+' منذ '+(-d)+' يوم ('+fmtDate(v[p[0]])+')']});
+        else if(d <= st.expiryWarnDays) out.push({tone:'', icon:'📄', vid:v.id, text:[el('b',{text:v.plate}),' تنتهي '+p[1]+' خلال '+d+' يوم ('+fmtDate(v[p[0]])+')']});
+      });
+      if(num(v.lastOilChangeKm) > 0 && st.oilChangeKm > 0){
+        var since = currentOdo(v.id) - num(v.lastOilChangeKm);
+        if(since >= st.oilChangeKm) out.push({tone:'', icon:'🛢️', vid:v.id, text:[el('b',{text:v.plate}),' تجاوزت موعد تبديل الدهن ('+fmtNum(since)+' كم منذ آخر تبديل)']});
+      }
+    });
+    return out;
+  }
+
+  /* ---------------- writes + audit ---------------- */
+  function actor(){ return {by:S.authUser ? S.authUser.uid : '', byName:S.profile ? S.profile.name : ''}; }
+  function audit(action, collection, docId, details){
+    if(!db || !S.authUser) return;
+    var a = actor();
+    db.collection('audit').add({action:action, collection:collection, docId:docId||'', details:details||'', by:a.by, byName:a.byName, at:nowISO()})
+      .catch(function(e){ console.warn('audit failed', e); });
+  }
+  /* يعرض رسالة النجاح فوراً عند انقطاع الإنترنت (الكتابة تُحفظ محلياً وتُزامن لاحقاً) */
+  function commit(promise, okMsg){
+    if(!navigator.onLine){
+      showToast('حُفظ على الجهاز — سيُزامَن تلقائياً عند عودة الاتصال');
+      promise.catch(function(e){ console.error(e); showToast('تعذّر الحفظ: '+errMsg(e)); });
+      return Promise.resolve();
+    }
+    return promise.then(function(r){ if(okMsg) showToast(okMsg); return r; })
+      .catch(function(e){ console.error(e); showToast('تعذّر الحفظ: '+errMsg(e)); throw e; });
+  }
+  function errMsg(e){
+    var c = e && (e.code || e.message) || '';
+    if(/permission/i.test(c)) return 'لا تملك صلاحية هذا الإجراء';
+    if(/invalid-credential|wrong-password|user-not-found|invalid-login/i.test(c)) return 'اسم المستخدم أو كلمة المرور غير صحيحة';
+    if(/email-already-in-use/.test(c)) return 'اسم المستخدم مستخدم مسبقاً';
+    if(/weak-password/.test(c)) return 'كلمة المرور قصيرة (6 أحرف على الأقل)';
+    if(/too-many-requests/.test(c)) return 'محاولات كثيرة — انتظر قليلاً ثم أعد المحاولة';
+    if(/network/i.test(c)) return 'مشكلة في الاتصال بالإنترنت';
+    return c || 'خطأ غير معروف';
+  }
+  function stamp(data){ var a = actor(); data.createdAt = data.createdAt || nowISO(); data.createdBy = a.by; data.createdByName = a.byName; return data; }
+  function configDoc(){ return db.doc('config/general'); }
+
+  /* ---------------- modal + form builder ---------------- */
+  function openModal(opts){
+    var root = $('modalRoot');
+    var back = el('div',{class:'modal-backdrop'});
+    var box = el('div',{class:'modal'+(opts.wide ? ' modal-wide' : ''), role:'dialog', 'aria-modal':'true', 'aria-label':opts.title});
+    function close(){ if(back.parentNode) root.removeChild(back); }
+    box.appendChild(el('div',{class:'modal-head'},[
+      el('h3',{text:opts.title}),
+      el('button',{class:'btn btn-sm btn-ghost', type:'button', 'aria-label':'إغلاق', text:'✕', onclick:close})
+    ]));
+    appendKids(box, opts.body || []);
+    if(opts.actions && opts.actions.length){
+      box.appendChild(el('div',{class:'row'}, opts.actions.map(function(a){
+        return el('button',{class:'btn '+(a.cls||''), type:'button', text:a.label, onclick:function(){ a.onClick(close); }});
+      })));
+    }
+    back.appendChild(box);
+    back.addEventListener('mousedown', function(e){ if(e.target === back) close(); });
+    root.appendChild(back);
+    var first = box.querySelector('input:not([type=hidden]):not([type=file]), select, textarea');
+    if(first && !opts.noFocus && window.matchMedia('(min-width:561px)').matches) setTimeout(function(){ first.focus(); }, 30);
+    return close;
+  }
+  function confirmModal(title, message, okLabel, onOk, danger){
+    openModal({title:title, body:[el('p',{class:'muted', text:message})], actions:[
+      {label:okLabel || 'تأكيد', cls:danger ? 'btn-danger' : 'btn-primary', onClick:function(close){ close(); onOk(); }},
+      {label:'إلغاء', cls:'btn-ghost', onClick:function(close){ close(); }}
+    ]});
+  }
+
+  /* fields: [{key,label,type,options,value,required,placeholder,full,help,min,step,list,onChange,accept}] */
+  function formModal(opts){
+    var inputs = {}, wraps = {};
+    var errBox = el('div',{class:'error-text', role:'alert'});
+    var form = el('form',{novalidate:'novalidate'});
+    var grid = el('div',{class:'form-grid'});
+    var ctx = {
+      get:function(k){ return readField(opts.fields.find(function(f){ return f.key === k; }), inputs[k]); },
+      set:function(k,v){ var i = inputs[k]; if(!i) return; if(i.type === 'checkbox') i.checked = !!v; else i.value = v === undefined || v === null ? '' : v; },
+      show:function(k, on){ if(wraps[k]) wraps[k].hidden = !on; },
+      error:function(m){ errBox.textContent = m || ''; }
+    };
+    opts.fields.forEach(function(f){
+      var id = 'f_'+f.key+'_'+uid();
+      var input;
+      if(f.type === 'select'){
+        input = el('select',{id:id, name:f.key}, (f.options||[]).map(function(o){
+          return el('option',{value:o.value, text:o.label, selected:String(o.value) === String(f.value === undefined ? '' : f.value)});
+        }));
+      } else if(f.type === 'textarea'){
+        input = el('textarea',{id:id, name:f.key, placeholder:f.placeholder||'', value:f.value||''});
+      } else if(f.type === 'checks'){
+        var vals = f.value || [];
+        input = el('div',{class:'checks', id:id}, (f.options||[]).map(function(o){
+          return el('label',{},[el('input',{type:'checkbox', value:o.value, checked:vals.indexOf(o.value) >= 0}), o.label]);
+        }));
+      } else if(f.type === 'file'){
+        input = el('input',{id:id, name:f.key, type:'file', accept:f.accept || 'image/*'});
+        if(f.capture) input.setAttribute('capture', 'environment');
+      } else if(f.type === 'toggle'){
+        input = el('input',{id:id, name:f.key, type:'checkbox', checked:!!f.value});
+      } else {
+        input = el('input',{id:id, name:f.key, type:f.type || 'text', placeholder:f.placeholder||'', autocomplete:f.autocomplete||'off',
+          value:f.value === undefined || f.value === null ? '' : String(f.value), min:f.min, max:f.max, step:f.step, inputmode:f.inputmode});
+        if(f.list){
+          var lid = id+'_list';
+          input.setAttribute('list', lid);
+          grid.appendChild(el('datalist',{id:lid}, f.list.map(function(s){ return el('option',{value:s}); })));
+        }
+      }
+      if(f.onChange) input.addEventListener(f.type === 'checks' || f.type === 'select' || f.type === 'file' || f.type === 'toggle' ? 'change' : 'input', function(){ f.onChange(ctx.get(f.key), ctx); });
+      inputs[f.key] = input;
+      var labelNode = f.type === 'toggle'
+        ? el('label',{'for':id, style:{display:'flex', gap:'8px', alignItems:'center', fontSize:'14px', color:'var(--ink)'}},[input, f.label])
+        : el('label',{'for':id, text:f.label + (f.required ? ' *' : '')});
+      var wrap = el('div',{class:'field'+(f.full || f.type === 'textarea' || f.type === 'checks' ? ' full' : '')},
+        f.type === 'toggle' ? [labelNode] : [labelNode, input, f.help ? el('span',{class:'help', text:f.help}) : null]);
+      if(f.hidden) wrap.hidden = true;
+      wraps[f.key] = wrap;
+      grid.appendChild(wrap);
+    });
+    var submitBtn = el('button',{class:'btn btn-primary btn-lg', type:'submit', text:opts.submitLabel || 'حفظ'});
+    appendKids(form, [grid, errBox, el('div',{class:'row'},[submitBtn])]);
+    var close = openModal({title:opts.title, wide:opts.wide, body:[opts.intro ? el('p',{class:'muted', text:opts.intro}) : null, form]});
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      errBox.textContent = '';
+      var values = {}, missing = [];
+      opts.fields.forEach(function(f){
+        if(wraps[f.key].hidden){ values[f.key] = f.type === 'number' ? null : ''; return; }
+        var v = readField(f, inputs[f.key]);
+        values[f.key] = v;
+        if(f.required && (v === '' || v === null || (Array.isArray(v) && !v.length))) missing.push(f.label);
+      });
+      if(missing.length){ errBox.textContent = 'حقول مطلوبة: '+missing.join('، '); return; }
+      submitBtn.disabled = true;
+      Promise.resolve().then(function(){ return opts.onSubmit(values, ctx); }).then(function(res){
+        if(res === false){ submitBtn.disabled = false; return; }
+        close();
+      }).catch(function(err){
+        submitBtn.disabled = false;
+        errBox.textContent = typeof err === 'string' ? err : errMsg(err);
+      });
+    });
+    if(opts.onOpen) opts.onOpen(ctx);
+    return ctx;
+  }
+  function readField(f, input){
+    if(!f || !input) return '';
+    if(f.type === 'checks') return Array.prototype.slice.call(input.querySelectorAll('input:checked')).map(function(c){ return c.value; });
+    if(f.type === 'file') return input.files && input.files[0] || null;
+    if(f.type === 'toggle') return !!input.checked;
+    if(f.type === 'number'){ var t = String(input.value).trim(); return t === '' ? null : Number(t); }
+    return String(input.value).trim();
+  }
+  function opt(value, label){ return {value:value, label:label}; }
+  function mapOptions(obj){ return Object.keys(obj).map(function(k){ return opt(k, obj[k]); }); }
+  function vehicleOptions(placeholder){
+    return [opt('', placeholder || 'اختر العجلة...')].concat(S.vehicles.slice().sort(byPlate).map(function(v){ return opt(v.id, vehicleLabel(v)); }));
+  }
+  function driverOptions(placeholder){
+    return [opt('', placeholder || 'اختر السائق...')].concat(activeDrivers().map(function(d){ return opt(d.id, d.name); }));
+  }
+  function activeDrivers(){ return S.drivers.filter(function(d){ return d.active !== false; }).sort(function(a,b){ return a.name.localeCompare(b.name,'ar'); }); }
+  function byPlate(a,b){ return String(a.plate).localeCompare(String(b.plate),'ar'); }
+  function resolveDriver(name){
+    var n = normName(name);
+    if(!n) return {driverId:'', driverName:''};
+    var d = S.drivers.find(function(x){ return normName(x.name) === n; });
+    return d ? {driverId:d.id, driverName:d.name} : {driverId:'', driverName:String(name).trim()};
+  }
+
+  /* ---------------- الصور: ضغط داخل المتصفح (نحو 150KB) وحفظها في Firestore ---------------- */
+  function compressImage(file, maxBytes){
+    maxBytes = maxBytes || 150*1024;
+    return new Promise(function(resolve, reject){
+      if(!file) return resolve(null);
+      if(!/^image\//.test(file.type)) return reject('الملف المختار ليس صورة');
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function(){
+        URL.revokeObjectURL(url);
+        var maxDim = 1280, q = 0.8, data = '';
+        for(var attempt = 0; attempt < 8; attempt++){
+          var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          var c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(img.width*scale)); c.height = Math.max(1, Math.round(img.height*scale));
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          data = c.toDataURL('image/jpeg', q);
+          if(data.length*0.75 <= maxBytes) break;
+          if(q > 0.5) q -= 0.15; else maxDim = Math.round(maxDim*0.75);
+        }
+        resolve(data);
+      };
+      img.onerror = function(){ URL.revokeObjectURL(url); reject('تعذّر قراءة الصورة'); };
+      img.src = url;
+    });
+  }
+  function saveAttachment(file, kind){
+    if(!file) return Promise.resolve('');
+    return compressImage(file).then(function(data){
+      var ref = db.collection('attachments').doc();
+      var p = ref.set(stamp({data:data, kind:kind}));
+      if(!navigator.onLine) return ref.id;
+      return p.then(function(){ return ref.id; });
+    });
+  }
+  function showAttachment(id, title){
+    if(!id) return;
+    db.collection('attachments').doc(id).get().then(function(s){
+      if(!s.exists){ showToast('المرفق غير موجود'); return; }
+      openModal({title:title || 'المرفق', body:[el('img',{class:'photo', src:s.data().data, alt:title||'مرفق', style:{maxHeight:'70vh', width:'100%'}})]});
+    }).catch(function(e){ showToast('تعذّر تحميل المرفق: '+errMsg(e)); });
+  }
+
+  /* ---------------- theme + network ---------------- */
+  function applyTheme(){
+    var t = '';
+    try{ t = localStorage.getItem('ameed_vehicles_theme') || ''; }catch(e){}
+    if(t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
+    $('themeBtn').textContent = t === 'dark' ? '☾' : t === 'light' ? '☀' : '◐';
+  }
+  function cycleTheme(){
+    var t = ''; try{ t = localStorage.getItem('ameed_vehicles_theme') || ''; }catch(e){}
+    t = t === '' ? 'light' : t === 'light' ? 'dark' : '';
+    try{ localStorage.setItem('ameed_vehicles_theme', t); }catch(e){}
+    applyTheme();
+  }
+  function updateNet(){
+    $('netDot').className = 'dot' + (navigator.onLine ? '' : ' offline');
+    $('netDot').title = navigator.onLine ? 'متصل' : 'غير متصل — تُحفظ الحركات على الجهاز';
+  }
+
+  /* ---------------- init ---------------- */
+  var profileUnsub = null, dataStarted = false, renderTimer = null, screen = '';
+
+  function init(){
+    applyTheme(); updateNet();
+    $('themeBtn').addEventListener('click', cycleTheme);
+    $('logoutBtn').addEventListener('click', function(){ auth.signOut(); });
+    window.addEventListener('online', updateNet);
+    window.addEventListener('offline', updateNet);
+
+    if(DEMO){
+      FB = window.__demoFirebase || makeDemoFirebase();
+      $('demoBanner').hidden = false;
+    } else {
+      FB = window.firebase;
+      if(!FB || !FB.firestore || !FB.auth){
+        clear($('main')).appendChild(el('div',{class:'card'},[el('p',{class:'error-text', text:'تعذّر تحميل مكتبات Firebase — تحقّق من الاتصال بالإنترنت ثم أعد تحميل الصفحة.'})]));
+        return;
+      }
+    }
+    app = FB.apps.length ? FB.app() : FB.initializeApp(firebaseConfig);
+    auth = app.auth(); db = app.firestore();
+    if(!DEMO){
+      // حفظ البيانات على الجهاز لموظف الاستعلامات عند ضعف الإنترنت
+      try{ db.enablePersistence({synchronizeTabs:true}).catch(function(e){ console.warn('persistence', e && e.code); }); }catch(e){}
+    }
+    if(DEMO && !(FB._store().cols.config || {}).general) seedDemoMode();
+
+    configDoc().onSnapshot(function(s){
+      S.config = s.exists ? s.data() : null; S.configLoaded = true; scheduleRender();
+    }, function(e){ console.error(e); S.configLoaded = true; scheduleRender(); });
+
+    auth.onAuthStateChanged(function(user){
+      S.authUser = user; S.profile = null; S.profileLoaded = false;
+      if(profileUnsub){ profileUnsub(); profileUnsub = null; }
+      stopData();
+      if(user){
+        profileUnsub = db.collection('users').doc(user.uid).onSnapshot(function(s){
+          S.profile = s.exists ? Object.assign({id:s.id}, s.data()) : null;
+          S.profileLoaded = true;
+          if(S.profile && S.profile.active !== false) startData();
+          scheduleRender();
+        }, function(e){ console.error(e); S.profileLoaded = true; scheduleRender(); });
+      }
+      scheduleRender();
+    });
+    if('serviceWorker' in navigator && location.protocol === 'https:'){
+      navigator.serviceWorker.register('sw.js').catch(function(){});
+    }
+    render();
+  }
+
+  function snapToList(snap){ var out = []; snap.forEach(function(d){ out.push(Object.assign({id:d.id}, d.data())); }); return out; }
+  function startData(){
+    if(dataStarted) return;
+    dataStarted = true;
+    var map = {users:'users', vehicles:'vehicles', drivers:'drivers', movements:'movements', requests:'requests', driverPoints:'points'};
+    if(isAdmin()) map.audit = 'audit';
+    Object.keys(map).forEach(function(col){
+      S.unsub.push(db.collection(col).onSnapshot(function(snap){
+        S[map[col]] = snapToList(snap);
+        scheduleRender();
+      }, function(e){ console.error(col, e); }));
+    });
+  }
+  function stopData(){
+    S.unsub.forEach(function(u){ try{ u(); }catch(e){} });
+    S.unsub = []; dataStarted = false;
+    ['users','vehicles','drivers','movements','requests','points','audit'].forEach(function(k){ S[k] = []; });
+  }
+
+  function scheduleRender(){
+    if(renderTimer) return;
+    renderTimer = setTimeout(function(){ renderTimer = null; render(); }, 30);
+  }
+
+  /* يحدد الشاشة المطلوبة، ويعيد بناءها فقط عند تغيّرها (حتى لا تُمسح النماذج أثناء الكتابة) */
+  function render(){
+    var want;
+    if(!S.configLoaded) want = 'loading';
+    else if(!S.authUser) want = S.config ? 'login' : 'setup';
+    else if(!S.profileLoaded) want = 'loading';
+    else if(!S.profile || S.profile.active === false) want = 'blocked';
+    else want = 'app';
+
+    $('logoutBtn').hidden = !S.authUser;
+    $('roleLabel').textContent = S.profile ? (ROLE_LABEL[S.profile.role] || S.profile.role) + ' — ' + S.profile.name : 'غير مسجّل';
+
+    if(want !== 'app'){
+      $('tabs').hidden = true;
+      if(want !== screen){
+        screen = want;
+        var m = clear($('main'));
+        if(want === 'loading') m.appendChild(el('div',{class:'card'},[el('p',{class:'muted', text:'⏳ جارٍ الاتصال بقاعدة البيانات...'})]));
+        else if(want === 'login') m.appendChild(buildLogin());
+        else if(want === 'setup') m.appendChild(buildSetup());
+        else if(want === 'blocked') m.appendChild(el('div',{class:'card login-wrap'},[
+          el('h2',{text:'الحساب غير مفعّل'}),
+          el('p',{class:'muted', text:'هذا الحساب غير مرتبط بصلاحية في النظام أو أوقفه مدير النظام. راجع مدير النظام.'}),
+          el('button',{class:'btn', type:'button', text:'تسجيل الخروج', onclick:function(){ auth.signOut(); }})
+        ]));
+      }
+      return;
+    }
+    computeDerived();
+    var tabs = tabsForRole();
+    if(tabs.indexOf(S.tab) < 0) S.tab = tabs[0];
+    renderTabs(tabs);
+    if(screen !== 'app:'+S.tab){
+      screen = 'app:'+S.tab;
+      var main = clear($('main'));
+      var panel = el('section',{class:'panel', id:'panel-'+S.tab});
+      main.appendChild(panel);
+      PANELS[S.tab].build(panel);
+    }
+    PANELS[S.tab].refresh();
+  }
+  function renderTabs(tabs){
+    var nav = $('tabs'); nav.hidden = false; clear(nav);
+    var pend = pendingCountForMe();
+    tabs.forEach(function(t){
+      var count = t === 'requests' ? pend : t === 'finance' && isFinance() ? S.requests.filter(function(r){ return r.status === 'awaiting_finance'; }).length : 0;
+      nav.appendChild(el('button',{class:'tab'+(S.tab === t ? ' active' : ''), type:'button', 'data-tab':t, onclick:function(){ goTab(t); }},[
+        TAB_LABEL[t], count ? el('span',{class:'tab-count', text:String(count)}) : null
+      ]));
+    });
+  }
+  function goTab(t, after){
+    S.tab = t; screen = ''; render();
+    if(after) after();
+    window.scrollTo(0,0);
+  }
+
+  /* ---------------- login / setup ---------------- */
+  function usernameToEmail(u){ return String(u).trim().toLowerCase() + '@' + EMAIL_DOMAIN; }
+  function validUsername(u){ return /^[a-z0-9._-]{3,30}$/.test(String(u).trim().toLowerCase()); }
+  function buildLogin(){
+    var err = el('div',{class:'error-text', role:'alert'});
+    var user = el('input',{id:'loginUser', type:'text', autocomplete:'username', autocapitalize:'none', spellcheck:'false', placeholder:'مثال: ali.hussein'});
+    var pass = el('input',{id:'loginPass', type:'password', autocomplete:'current-password'});
+    var btn = el('button',{class:'btn btn-primary btn-lg btn-block', type:'submit', text:'دخول'});
+    function doLogin(u, p){
+      err.textContent = ''; btn.disabled = true;
+      auth.signInWithEmailAndPassword(usernameToEmail(u), p).catch(function(e){ err.textContent = errMsg(e); btn.disabled = false; });
+    }
+    var form = el('form',{},[
+      el('div',{class:'stack'},[
+        el('div',{class:'field'},[el('label',{'for':'loginUser', text:'اسم المستخدم'}), user]),
+        el('div',{class:'field'},[el('label',{'for':'loginPass', text:'كلمة المرور'}), pass]),
+        err, btn
+      ])
+    ]);
+    form.addEventListener('submit', function(e){ e.preventDefault(); doLogin(user.value, pass.value); });
+    var kids = [el('h2',{text:'تسجيل الدخول'}), el('p',{class:'muted', text:'لكل موظف حساب شخصي ينشئه مدير النظام، ليُعرف من سجّل كل حركة.'}), form];
+    if(DEMO){
+      kids.push(el('hr',{class:'sep'}));
+      kids.push(el('p',{class:'muted', text:'حسابات العرض التجريبي (كلمة المرور لجميعها: demo1234):'}));
+      kids.push(el('div',{class:'demo-users'}, DEMO_USERS.map(function(d){
+        return el('button',{class:'btn', type:'button', 'data-demo-user':d.username, onclick:function(){ doLogin(d.username, 'demo1234'); }},[ROLE_LABEL[d.role]]);
+      })));
+      kids.push(el('button',{class:'btn btn-sm btn-ghost', type:'button', text:'إعادة ضبط بيانات العرض التجريبي', onclick:function(){
+        confirmModal('إعادة الضبط','ستُحذف كل بيانات العرض التجريبي من هذا المتصفح وتُنشأ من جديد.','إعادة الضبط', function(){ FB._reset(); location.reload(); }, true);
+      }}));
+    }
+    return el('div',{class:'card login-wrap'}, kids);
+  }
+  function buildSetup(){
+    var err = el('div',{class:'error-text', role:'alert'});
+    var f = {
+      name:el('input',{id:'setupName', type:'text', value:'مشتاق كريم'}),
+      user:el('input',{id:'setupUser', type:'text', autocapitalize:'none', value:'admin'}),
+      pass:el('input',{id:'setupPass', type:'password', autocomplete:'new-password'})
+    };
+    var btn = el('button',{class:'btn btn-primary btn-lg btn-block', type:'submit', text:'إنشاء الحساب وتهيئة النظام'});
+    var form = el('form',{},[el('div',{class:'stack'},[
+      el('div',{class:'field'},[el('label',{'for':'setupName', text:'الاسم'}), f.name]),
+      el('div',{class:'field'},[el('label',{'for':'setupUser', text:'اسم المستخدم (أحرف إنجليزية صغيرة وأرقام)'}), f.user]),
+      el('div',{class:'field'},[el('label',{'for':'setupPass', text:'كلمة المرور (6 أحرف على الأقل)'}), f.pass]),
+      err, btn
+    ])]);
+    form.addEventListener('submit', function(e){
+      e.preventDefault(); err.textContent = '';
+      var u = f.user.value.trim().toLowerCase();
+      if(!f.name.value.trim()) return (err.textContent = 'اكتب الاسم');
+      if(!validUsername(u)) return (err.textContent = 'اسم المستخدم: 3–30 حرفاً إنجليزياً صغيراً أو رقماً أو (. _ -)');
+      btn.disabled = true;
+      auth.createUserWithEmailAndPassword(usernameToEmail(u), f.pass.value).then(function(cred){
+        var b = db.batch();
+        b.set(db.collection('users').doc(cred.user.uid), {username:u, name:f.name.value.trim(), role:'admin', locations:[], driverId:'', active:true, createdAt:nowISO()});
+        b.set(configDoc(), {locations:DEFAULT_LOCATIONS, settings:DEFAULT_SETTINGS, createdAt:nowISO()});
+        return b.commit();
+      }).catch(function(e){ err.textContent = errMsg(e); btn.disabled = false; });
+    });
+    return el('div',{class:'card login-wrap'},[
+      el('h2',{text:'تهيئة النظام — إنشاء حساب مدير النظام الأول'}),
+      el('p',{class:'muted', text:'قاعدة البيانات فارغة. أنشئ حساب مدير النظام، ثم أضف من تبويب "الإدارة" حسابات بقية الموظفين والمواقع.'}),
+      form
+    ]);
+  }
+
+  /* ====================================================================
+     التبويبات: لكل تبويب build() مرة عند فتحه، وrefresh() عند كل تغيير بيانات
+     ==================================================================== */
+  var PANELS = {};
+
+  function statTile(value, label, tone, onClick){
+    return el(onClick ? 'button' : 'div',{class:'stat-tile', 'data-tone':tone||'', type:onClick ? 'button' : null, onclick:onClick},[
+      el('span',{class:'v', text:String(value)}), el('span',{class:'l', text:label})
+    ]);
+  }
+  function emptyNote(text){ return el('p',{class:'faint', text:text}); }
+
+  /* ---------------- الرئيسية ---------------- */
+  PANELS.home = {
+    build:function(root){
+      this.stats = el('div',{class:'stat-grid'});
+      this.alerts = el('div',{class:'card'});
+      this.live = el('div',{class:'card'});
+      this.driverBox = el('div',{class:'panel'});
+      appendKids(root, [this.stats, this.driverBox, this.alerts, this.live]);
+      this.liveFilter = 'all';
+    },
+    refresh:function(){
+      var self = this;
+      clear(this.stats); clear(this.alerts); clear(this.live); clear(this.driverBox);
+      if(role() === 'driver'){ this.alerts.hidden = true; this.live.hidden = true; this.stats.hidden = true; renderDriverHome(this.driverBox); return; }
+      var lives = S.vehicles.map(function(v){ return derived.live[v.id]; });
+      var outs = lives.filter(function(s){ return s.where === 'out'; });
+      var late = outs.filter(function(s){ return s.late; });
+      var ins = lives.filter(function(s){ return s.where === 'in'; });
+      var maint = S.vehicles.filter(function(v){ return v.status === 'maintenance' || v.status === 'broken'; });
+      appendKids(this.stats, [
+        statTile(ins.length, 'داخل الجامعة', 'free', function(){ self.liveFilter = 'in'; self.refresh(); }),
+        statTile(outs.length, 'خارج الجامعة', 'info', function(){ self.liveFilter = 'out'; self.refresh(); }),
+        statTile(late.length, 'متأخرة عن الإرجاع', 'busy', function(){ self.liveFilter = 'late'; self.refresh(); }),
+        statTile(maint.length, 'في الصيانة / عاطلة', 'pending'),
+        tabsForRole().indexOf('requests') >= 0 ? statTile(pendingCountForMe(), 'طلبات تنتظر إجراءك', 'pending', function(){ tabState.requestsFilter = 'mine'; goTab('requests'); }) : null
+      ]);
+
+      var alerts = role() === 'gate' ? computeAlerts().filter(function(a){ return a.icon === '⏰'; }) : computeAlerts();
+      this.alerts.hidden = false;
+      this.alerts.appendChild(el('div',{class:'row-between'},[el('h2',{text:'التنبيهات'}), el('span',{class:'faint', text:alerts.length ? alerts.length+' تنبيه' : ''})]));
+      if(!alerts.length) this.alerts.appendChild(emptyNote('لا توجد تنبيهات حالياً ✓'));
+      alerts.forEach(function(a){ self.alerts.appendChild(el('div',{class:'alert '+a.tone},[el('span',{class:'ic', text:a.icon}), el('span',{}, a.text)])); });
+
+      this.live.hidden = false;
+      var f = this.liveFilter;
+      var chips = el('div',{class:'chip-row'}, [['all','الكل'],['out','خارج'],['late','متأخرة'],['in','داخل']].map(function(c){
+        return el('button',{class:'chip'+(f === c[0] ? ' active' : ''), type:'button', text:c[1], onclick:function(){ self.liveFilter = c[0]; self.refresh(); }});
+      }));
+      this.live.appendChild(el('div',{class:'row-between'},[el('h2',{text:'الجدول الآني للعجلات'}), el('span',{class:'faint', text:'آخر تحديث '+fmtTime(new Date())})]));
+      this.live.appendChild(chips);
+      if(!S.vehicles.length){ this.live.appendChild(emptyNote('لا توجد عجلات مسجّلة بعد.')); return; }
+      var showOut = f === 'all' || f === 'out' || f === 'late';
+      var showIn = f === 'all' || f === 'in';
+      if(showOut){
+        var outList = (f === 'late' ? late : outs).sort(function(a,b){ return b.outMs - a.outMs; });
+        this.live.appendChild(el('div',{class:'group-title', text:'خارج الجامعة ('+outList.length+')'}));
+        this.live.appendChild(outList.length ? el('div',{class:'grid-cards'}, outList.map(liveCard)) : emptyNote('لا توجد عجلات خارج الجامعة.'));
+      }
+      if(showIn){
+        var groups = {};
+        ins.forEach(function(s){ var k = s.locationId || ''; (groups[k] = groups[k] || []).push(s); });
+        Object.keys(groups).sort(function(a,b){ return locationName(a).localeCompare(locationName(b),'ar'); }).forEach(function(k){
+          self.live.appendChild(el('div',{class:'group-title', text:'داخل الجامعة — '+(k ? locationName(k) : 'موقع غير محدد')+' ('+groups[k].length+')'}));
+          self.live.appendChild(el('div',{class:'grid-cards'}, groups[k].sort(function(a,b){ return byPlate(a.vehicle,b.vehicle); }).map(liveCard)));
+        });
+      }
+    }
+  };
+  function liveCard(s){
+    var v = s.vehicle;
+    var status = s.where === 'out' ? (s.late ? 'late' : 'out') : (v.status === 'maintenance' || v.status === 'broken' ? 'maint' : 'in');
+    var label = s.where === 'out' ? (s.late ? 'متأخرة' : 'خارج') : 'داخل';
+    var details = [];
+    details.push(el('div',{},[[v.make, v.model, v.year].filter(Boolean).join(' ')]));
+    if(s.where === 'out'){
+      details.push(el('div',{},['مع: ', el('b',{text:driverLabel(s.driverId, s.driverName)})]));
+      details.push(el('div',{},['منذ: ', el('b',{class:'num', text:fmtDT(s.since)}), ' (', fmtDuration(s.outMs), ')']));
+      if(s.purpose) details.push(el('div',{},['الوجهة: ', s.purpose]));
+    } else {
+      details.push(el('div',{},['الموقع: ', el('b',{text:s.locationId ? locationName(s.locationId) : 'غير محدد'})]));
+      if(s.since) details.push(el('div',{},['دخلت: ', el('span',{class:'num', text:fmtDT(s.since)})]));
+    }
+    var pills = [pill(status === 'late' ? 'late' : s.where, label)];
+    if(v.status && v.status !== 'active') pills.push(pill(v.status, VSTATUS_LABEL[v.status]));
+    var actions = null;
+    if(canRecordMovement()){
+      var dir = s.where === 'out' ? 'in' : 'out';
+      actions = el('div',{class:'item-actions'},[
+        el('button',{class:'btn btn-sm '+(dir === 'in' ? 'btn-ok' : ''), type:'button', 'data-move':v.id, text:dir === 'in' ? '⬅ تسجيل دخول' : '➡ تسجيل خروج', onclick:function(){ openMovementForm(v.id, dir); }})
+      ]);
+    }
+    var canView = tabsForRole().indexOf('vehicles') >= 0;
+    return el('div',{class:'v-card', 'data-status':status, 'data-vehicle':v.id},[
+      el('div',{class:'v-head'},[
+        canView ? el('button',{class:'btn-ghost', type:'button', style:{border:'none', background:'none', padding:0, cursor:'pointer', color:'inherit'}, onclick:function(){ openVehicleDetails(v.id); }},[el('span',{class:'v-plate plate', text:v.plate})]) : el('span',{class:'v-plate plate', text:v.plate}),
+        el('span',{class:'row', style:{gap:'4px'}}, pills)
+      ]),
+      el('div',{class:'v-detail'}, details),
+      actions
+    ]);
+  }
+
+  function renderDriverHome(root){
+    var did = S.profile.driverId, d = did && driverById(did);
+    if(!d){
+      root.appendChild(el('div',{class:'card'},[el('p',{class:'muted', text:'حسابك غير مرتبط بسجل سائق بعد — راجع مدير الآليات أو مدير النظام.'})]));
+    }
+    var mk = monthKey(new Date());
+    if(d){
+      var sc = driverScore(did, mk);
+      root.appendChild(el('div',{class:'stat-grid'},[
+        statTile(fmtNum(sc.total), 'نقاطي هذا الشهر', sc.total >= 90 ? 'free' : sc.total >= 70 ? 'pending' : 'busy'),
+        statTile(sc.stars ? '★'.repeat(sc.stars) : '—', 'تقييم الشهر', 'pending'),
+        statTile(sc.trips.length, 'رحلاتي هذا الشهر', 'info'),
+        statTile(sc.late.length, 'تأخر في الإرجاع', 'busy')
+      ]));
+      var mine = S.vehicles.map(function(v){ return derived.live[v.id]; }).filter(function(s){ return s.where === 'out' && s.driverId === did; });
+      if(mine.length) root.appendChild(el('div',{class:'card'},[el('h2',{text:'العجلة التي بعهدتي الآن'}), el('div',{class:'grid-cards'}, mine.map(liveCard))]));
+    }
+    root.appendChild(el('div',{class:'card'},[
+      el('h2',{text:'طلب جديد'}),
+      el('div',{class:'grid-cards', style:{gridTemplateColumns:'repeat(3,1fr)'}}, ['fuel','maintenance','wash'].map(function(t){
+        return el('button',{class:'btn btn-lg', type:'button', 'data-new-request':t, onclick:function(){ openRequestForm(t); }},[REQ_ICON[t]+' '+REQ_TYPE[t]]);
+      }))
+    ]));
+    var open = visibleRequests().filter(function(r){ return OPEN_STATUSES.indexOf(r.status) >= 0; });
+    root.appendChild(el('div',{class:'card'},[el('h2',{text:'طلباتي غير المنجزة ('+open.length+')'}),
+      open.length ? el('div',{class:'stack'}, open.sort(byCreatedDesc).map(requestItem)) : emptyNote('لا توجد طلبات مفتوحة.')]));
+    if(d){
+      var trips = derived.trips.filter(function(t){ return t.driverId === did; }).sort(function(a,b){ return String(b.outAt).localeCompare(String(a.outAt)); }).slice(0, 15);
+      root.appendChild(el('div',{class:'card'},[el('h2',{text:'آخر رحلاتي'}),
+        trips.length ? tableNode(['العجلة','الخروج','الدخول','المدة','الوجهة'], trips.map(function(t){
+          return [vehicleLabel(vehicleById(t.vehicleId)), fmtDT(t.outAt), t.inAt ? fmtDT(t.inAt) : 'لم تعد بعد', fmtDuration(t.durationMs) + (t.late ? ' ⚠' : ''), t.purpose || '—'];
+        })) : emptyNote('لا توجد رحلات مسجّلة.')]));
+    }
+  }
+  function byCreatedDesc(a,b){ return String(b.createdAt).localeCompare(String(a.createdAt)); }
+  function tableNode(headers, rows, opts){
+    opts = opts || {};
+    return el('div',{class:'table-scroll'},[el('table',{class:'data-table'},[
+      el('thead',{},[el('tr',{}, headers.map(function(h){ return el('th',{text:h}); }))]),
+      el('tbody',{}, rows.map(function(r, i){
+        return el('tr',{class:opts.rowClass ? opts.rowClass(i) || '' : ''}, r.map(function(c){ return el('td',{}, [c === null || c === undefined ? '—' : c]); }));
+      })),
+      opts.foot ? el('tfoot',{},[el('tr',{}, opts.foot.map(function(c){ return el('td',{}, [c === null || c === undefined ? '' : c]); }))]) : null
+    ])]);
+  }
+
+  /* ---------------- الحركة (الاستعلامات) ---------------- */
+  PANELS.gate = {
+    build:function(root){
+      var locs = allowedLocations();
+      var head = el('div',{class:'card'},[
+        el('h2',{text:'تسجيل حركة عجلة'}),
+        el('p',{class:'muted', text:role() === 'gate' ? 'مواقعك: '+(locs.length ? locs.map(function(l){ return l.name; }).join('، ') : 'لم يُحدَّد لك موقع بعد — راجع مدير النظام') : 'الوقت يُسجَّل تلقائياً. يمكن أيضاً التسجيل مباشرة من بطاقة العجلة في الرئيسية.'}),
+        el('div',{class:'seg'},[
+          el('button',{class:'on-out', type:'button', id:'gateOutBtn', text:'➡ خروج عجلة', onclick:function(){ openMovementForm('', 'out'); }}),
+          el('button',{class:'on-in', type:'button', id:'gateInBtn', text:'⬅ دخول عجلة', onclick:function(){ openMovementForm('', 'in'); }})
+        ])
+      ]);
+      this.list = el('div',{class:'card'});
+      appendKids(root, [head, this.list]);
+    },
+    refresh:function(){
+      clear(this.list);
+      var locIds = allowedLocations().map(function(l){ return l.id; });
+      var since = Date.now() - 48*3600000;
+      var movs = S.movements.filter(function(m){ return toDate(m.at).getTime() >= since && (role() !== 'gate' || locIds.indexOf(m.locationId) >= 0); })
+        .sort(function(a,b){ return String(b.at).localeCompare(String(a.at)); });
+      this.list.appendChild(el('div',{class:'row-between'},[el('h2',{text:'حركات آخر 48 ساعة'}), el('span',{class:'faint', text:movs.length+' حركة'})]));
+      if(!movs.length){ this.list.appendChild(emptyNote('لا توجد حركات مسجّلة خلال آخر 48 ساعة.')); return; }
+      this.list.appendChild(el('div',{class:'stack'}, movs.slice(0,100).map(movementItem)));
+    }
+  };
+  function movementItem(m){
+    var v = vehicleById(m.vehicleId);
+    return el('div',{class:'item', 'data-movement':m.id},[
+      el('div',{class:'item-top'},[
+        el('span',{class:'item-title'},[m.direction === 'out' ? '➡ ' : '⬅ ', el('span',{class:'plate', text:v ? v.plate : '—'}), ' ', v ? [v.make, v.model].filter(Boolean).join(' ') : '']),
+        pill(m.direction, m.direction === 'out' ? 'خروج' : 'دخول')
+      ]),
+      el('div',{class:'item-meta'},[
+        el('span',{},['الوقت: ', el('b',{class:'num', text:fmtDT(m.at)})]),
+        el('span',{},['السائق: ', el('b',{text:driverLabel(m.driverId, m.driverName)})]),
+        el('span',{},['الموقع: ', locationName(m.locationId)]),
+        m.odometer ? el('span',{},['العداد: ', el('span',{class:'num', text:fmtNum(m.odometer)})]) : null,
+        m.purpose ? el('span',{},['الوجهة: ', m.purpose]) : null,
+        el('span',{class:'faint', text:'سجّلها: '+(m.byName || '—')})
+      ]),
+      m.note ? el('div',{class:'item-note', text:m.note}) : null
+    ]);
+  }
+
+  function openMovementForm(vid, dir){
+    var locs = allowedLocations();
+    if(!locs.length){ showToast('لم يُحدَّد لك موقع — راجع مدير النظام'); return; }
+    if(!S.vehicles.length){ showToast('لا توجد عجلات مسجّلة'); return; }
+    var confirmKey = '';
+    function defaults(ctx, id, d){
+      var v = vehicleById(id), s = id && derived.live[id];
+      if(!v) return;
+      if(!d){ d = s && s.where === 'out' ? 'in' : 'out'; ctx.set('direction', d); }
+      var drv = d === 'in' && s && s.where === 'out' ? driverLabel(s.driverId, s.driverName) : driverLabel(v.defaultDriverId, '');
+      ctx.set('driver', drv === '—' ? '' : drv);
+      ctx.show('purpose', d === 'out');
+      ctx.error('');
+      ctx.set('odometer', '');
+      var odoField = document.querySelector('.modal input[name=odometer]');
+      if(odoField) odoField.placeholder = 'آخر قراءة: '+fmtNum(currentOdo(id));
+    }
+    formModal({
+      title:dir === 'in' ? 'تسجيل دخول عجلة' : dir === 'out' ? 'تسجيل خروج عجلة' : 'تسجيل حركة',
+      submitLabel:'تسجيل الحركة',
+      fields:[
+        {key:'vehicleId', label:'العجلة', type:'select', options:vehicleOptions(), value:vid, required:true, onChange:function(v, ctx){ defaults(ctx, v, ''); }},
+        {key:'direction', label:'الاتجاه', type:'select', options:[opt('out','خروج من الجامعة'), opt('in','دخول إلى الجامعة')], value:dir || 'out', required:true,
+          onChange:function(d, ctx){ defaults(ctx, ctx.get('vehicleId'), d); }},
+        {key:'driver', label:'السائق الفعلي', list:activeDrivers().map(function(d){ return d.name; }), placeholder:'اختر أو اكتب اسم سائق', help:'يمكن كتابة اسم سائق من خارج القائمة'},
+        {key:'locationId', label:'الموقع / البوابة', type:'select', options:locs.map(function(l){ return opt(l.id, l.name); }), value:locs[0].id, required:true},
+        {key:'odometer', label:'قراءة العداد (اختياري)', type:'number', min:0, inputmode:'numeric'},
+        {key:'purpose', label:'الوجهة أو الغرض', placeholder:'مثال: مهمة رسمية إلى بغداد', hidden:dir === 'in'},
+        {key:'note', label:'ملاحظة', type:'textarea'}
+      ],
+      onOpen:function(ctx){ if(vid) defaults(ctx, vid, dir); },
+      onSubmit:function(vals, ctx){
+        var v = vehicleById(vals.vehicleId), s = derived.live[vals.vehicleId];
+        if(!v) throw 'اختر العجلة';
+        if(locs.map(function(l){ return l.id; }).indexOf(vals.locationId) < 0) throw 'لا تملك صلاحية التسجيل في هذا الموقع';
+        if(vals.direction === 'out' && !vals.driver) throw 'اكتب اسم السائق الذي خرج بالعجلة';
+        var warnings = [];
+        if(s && s.where === vals.direction) warnings.push(vals.direction === 'out' ? 'العجلة مسجّلة خارج الجامعة أصلاً.' : 'العجلة مسجّلة داخل الجامعة أصلاً.');
+        if(vals.direction === 'out' && v.status && v.status !== 'active') warnings.push('حالة العجلة: '+VSTATUS_LABEL[v.status]+'.');
+        if(vals.odometer !== null && vals.odometer < currentOdo(v.id)) warnings.push('قراءة العداد أقل من آخر قراءة معروفة ('+fmtNum(currentOdo(v.id))+').');
+        var key = warnings.join('|');
+        if(warnings.length && confirmKey !== key){ confirmKey = key; throw '⚠ '+warnings.join(' ')+' اضغط "تسجيل الحركة" مرة أخرى للتأكيد.'; }
+        var drv = resolveDriver(vals.driver);
+        var a = actor();
+        var ref = db.collection('movements').doc();
+        var data = {vehicleId:v.id, direction:vals.direction, driverId:drv.driverId, driverName:drv.driverName, locationId:vals.locationId,
+          at:nowISO(), odometer:vals.odometer, purpose:vals.direction === 'out' ? vals.purpose : '', note:vals.note, by:a.by, byName:a.byName};
+        var p = ref.set(data);
+        audit('movement.'+vals.direction, 'movements', ref.id, v.plate+' — '+(drv.driverName || ''));
+        return commit(p, (vals.direction === 'out' ? 'سُجّل خروج ' : 'سُجّل دخول ')+v.plate);
+      }
+    });
+  }
+
+  /* ---------------- الطلبات ---------------- */
+  PANELS.requests = {
+    build:function(root){
+      var self = this;
+      if(canCreateRequest()){
+        root.appendChild(el('div',{class:'card'},[
+          el('h2',{text:'طلب جديد'}),
+          el('div',{class:'grid-cards', style:{gridTemplateColumns:'repeat(3,1fr)'}}, ['fuel','maintenance','wash'].map(function(t){
+            return el('button',{class:'btn btn-lg', type:'button', 'data-new-request':t, onclick:function(){ openRequestForm(t); }},[REQ_ICON[t]+' '+REQ_TYPE[t]]);
+          }))
+        ]));
+      }
+      this.filters = el('div',{class:'stack'});
+      this.list = el('div',{class:'stack'});
+      root.appendChild(el('div',{class:'card'},[el('div',{class:'row-between'},[el('h2',{text:role() === 'driver' ? 'طلباتي' : 'الطلبات'})]), this.filters, this.list]));
+      this.typeSel = el('select',{class:'input', style:{maxWidth:'200px'}, onchange:function(){ tabState.requestsType = self.typeSel.value; self.refresh(); }},
+        [opt('', 'كل الأنواع')].concat(mapOptions(REQ_TYPE)).map(function(o){ return el('option',{value:o.value, text:o.label, selected:tabState.requestsType === o.value}); }));
+    },
+    refresh:function(){
+      var self = this, f = tabState.requestsFilter;
+      clear(this.filters);
+      var chips = role() === 'driver'
+        ? [['mine','المفتوحة'],['done','المنجزة'],['rejected','المرفوضة'],['all','الكل']]
+        : [['mine','بانتظار إجرائي'],['open','غير المنجزة'],['done','المنجزة'],['rejected','المرفوضة'],['all','الكل']];
+      if(!chips.some(function(c){ return c[0] === f; })) f = tabState.requestsFilter = 'mine';
+      var reqs = visibleRequests();
+      this.filters.appendChild(el('div',{class:'row'},[el('div',{class:'chip-row'}, chips.map(function(c){
+        var n = reqs.filter(function(r){ return requestMatches(r, c[0]); }).length;
+        return el('button',{class:'chip'+(f === c[0] ? ' active' : ''), type:'button', 'data-filter':c[0], onclick:function(){ tabState.requestsFilter = c[0]; self.refresh(); }},[c[1]+' ('+n+')']);
+      })), this.typeSel]));
+      clear(this.list);
+      var list = reqs.filter(function(r){ return requestMatches(r, f) && (!tabState.requestsType || r.type === tabState.requestsType); }).sort(byCreatedDesc);
+      if(!list.length){ this.list.appendChild(emptyNote('لا توجد طلبات ضمن هذا التصنيف.')); return; }
+      appendKids(this.list, list.slice(0, 150).map(requestItem));
+      if(list.length > 150) this.list.appendChild(emptyNote('يُعرض أحدث 150 طلباً — استخدم التقارير لعرض الكل.'));
+    }
+  };
+  function requestMatches(r, f){
+    if(f === 'mine') return role() === 'driver' ? OPEN_STATUSES.indexOf(r.status) >= 0 : awaitsMe(r);
+    if(f === 'open') return OPEN_STATUSES.indexOf(r.status) >= 0;
+    if(f === 'done') return r.status === 'done';
+    if(f === 'rejected') return r.status === 'rejected';
+    return true;
+  }
+  function requestAmount(r){
+    if(r.type === 'fuel') return num(r.amount);
+    if(r.type === 'maintenance') return num(r.actualCost);
+    return num(r.cost);
+  }
+  function requestItem(r){
+    var v = vehicleById(r.vehicleId);
+    var meta = [
+      el('span',{},['السائق: ', el('b',{text:driverLabel(r.driverId, r.driverName)})]),
+      el('span',{},['التاريخ: ', el('span',{class:'num', text:fmtDT(r.createdAt)})]),
+      el('span',{class:'faint', text:'قدّمه: '+(r.createdByName || '—')})
+    ];
+    if(r.type === 'fuel'){
+      var eff = derived.fuelEff[r.id];
+      meta.push(el('span',{},[FUEL_LABEL[r.fuelType] || '', ': ', el('b',{class:'num', text:fmtNum(r.liters,1)+' لتر'})]));
+      meta.push(el('span',{},['المبلغ: ', el('b',{class:'num', text:fmtIQD(r.amount)})]));
+      if(r.odometer) meta.push(el('span',{},['العداد: ', el('span',{class:'num', text:fmtNum(r.odometer)})]));
+      if(r.station) meta.push(el('span',{},['المحطة: ', r.station]));
+      if(r.payMethod) meta.push(el('span',{},['الدفع: ', PAY_LABEL[r.payMethod] || r.payMethod]));
+      if(eff) meta.push(el('span',{},['المعدل: ', el('b',{class:'num', text:fmtNum(eff,1)+' كم/لتر'}), derived.fuelOver[r.id] ? el('span',{class:'status-pill late', style:{marginInlineStart:'6px'}, text:'استهلاك مرتفع'}) : null]));
+    } else if(r.type === 'maintenance'){
+      if(r.workshop) meta.push(el('span',{},['الورشة: ', r.workshop]));
+      if(r.estCost) meta.push(el('span',{},['الكلفة التقديرية: ', el('span',{class:'num', text:fmtIQD(r.estCost)})]));
+      if(r.actualCost !== undefined && r.actualCost !== null && r.actualCost !== '') meta.push(el('span',{},['الكلفة الفعلية: ', el('b',{class:'num', text:fmtIQD(r.actualCost)})]));
+      if(r.odometer) meta.push(el('span',{},['العداد: ', el('span',{class:'num', text:fmtNum(r.odometer)})]));
+    } else {
+      meta.push(el('span',{},['النوع: ', WASH_KIND[r.kind] || '—']));
+      if(r.place) meta.push(el('span',{},['المكان: ', r.place]));
+      if(num(r.cost)) meta.push(el('span',{},['الكلفة: ', el('b',{class:'num', text:fmtIQD(r.cost)})]));
+    }
+    var hist = (r.history || []).map(function(h){
+      return el('div',{},[el('span',{class:'num', text:fmtDT(h.at)}), ' — ', STATUS_LABEL[h.status] || h.status, ' — ', h.byName || '', h.note ? ' ('+h.note+')' : '']);
+    });
+    return el('div',{class:'item', 'data-request':r.id, 'data-status':r.status},[
+      el('div',{class:'item-top'},[
+        el('span',{class:'item-title'},[REQ_ICON[r.type]+' '+REQ_TYPE[r.type]+' — ', el('span',{class:'plate', text:v ? v.plate : '—'}), v ? ' '+[v.make, v.model].filter(Boolean).join(' ') : '']),
+        pill(r.status, STATUS_LABEL[r.status] || r.status)
+      ]),
+      el('div',{class:'item-meta'}, meta),
+      r.description ? el('div',{class:'item-note', text:r.description}) : null,
+      r.note ? el('div',{class:'item-note', text:'ملاحظة: '+r.note}) : null,
+      r.status === 'rejected' && r.rejectReason ? el('div',{class:'alert danger'},['سبب الرفض: '+r.rejectReason]) : null,
+      hist.length ? el('details',{},[el('summary',{text:'مراحل الطلب ('+hist.length+')'}), el('div',{class:'timeline'}, hist)]) : null,
+      requestActions(r)
+    ]);
+  }
+  function requestActions(r){
+    var btns = [];
+    function b(label, cls, fn, key){ btns.push(el('button',{class:'btn btn-sm '+(cls||''), type:'button', 'data-action':key, text:label, onclick:fn})); }
+    if(r.receiptId) b('🧾 عرض الوصل', 'btn-ghost', function(){ showAttachment(r.receiptId, 'وصل '+REQ_TYPE[r.type]); }, 'receipt');
+    if(isFleet()){
+      if(r.status === 'new'){
+        if(r.type === 'fuel') b('✓ موافقة وإحالة للمالية', 'btn-ok', function(){ transition(r, 'awaiting_finance', {}, 'موافقة مدير الآليات', 'تمت الموافقة وأُحيل الطلب إلى المالية'); }, 'approve');
+        if(r.type === 'maintenance') b('✓ موافقة', 'btn-ok', function(){ transition(r, 'approved', {}, '', 'تمت الموافقة على طلب الصيانة'); }, 'approve');
+        if(r.type === 'wash') b('✓ تم الإنجاز', 'btn-ok', function(){ completeWash(r); }, 'complete');
+      }
+      if(r.status === 'approved' && r.type === 'maintenance') b('🔧 بدء التنفيذ', 'btn-primary', function(){ startMaintenance(r); }, 'start');
+      if(r.status === 'in_progress') b('✓ إنهاء العمل وإدخال الكلفة', 'btn-ok', function(){ finishMaintenance(r); }, 'finish');
+      if(['new','approved','in_progress'].indexOf(r.status) >= 0) b('✕ رفض', 'btn-danger', function(){ rejectRequest(r); }, 'reject');
+    }
+    if(isFinance() && r.status === 'awaiting_finance'){
+      b('✓ تأييد المبلغ ('+fmtIQD(requestAmount(r))+')', 'btn-ok', function(){
+        confirmModal('تأييد المبلغ', 'تأييد مبلغ '+fmtIQD(requestAmount(r))+' لطلب '+REQ_TYPE[r.type]+' — '+vehicleLabel(vehicleById(r.vehicleId))+'؟', 'تأييد', function(){
+          transition(r, 'done', {financeApprovedAmount:requestAmount(r), financeBy:actor().byName, financeAt:nowISO()}, 'تأييد المالية', 'تم تأييد المبلغ — الطلب منجز');
+        });
+      }, 'finance-approve');
+      b('✕ رفض المبلغ', 'btn-danger', function(){ rejectRequest(r); }, 'reject');
+    }
+    return btns.length ? el('div',{class:'item-actions'}, btns) : null;
+  }
+  function transition(r, status, extra, note, okMsg){
+    var a = actor();
+    var data = Object.assign({status:status, updatedAt:nowISO(), history:(r.history || []).concat([{status:status, at:nowISO(), by:a.by, byName:a.byName, note:note || ''}])}, extra || {});
+    if(status === 'done') data.doneAt = nowISO();
+    var v = vehicleById(r.vehicleId);
+    audit('request.'+status, 'requests', r.id, REQ_TYPE[r.type]+' — '+(v ? v.plate : '')+(note ? ' — '+note : ''));
+    return commit(db.collection('requests').doc(r.id).update(data), okMsg);
+  }
+  function rejectRequest(r){
+    formModal({title:'رفض الطلب', submitLabel:'رفض الطلب', fields:[{key:'reason', label:'سبب الرفض', type:'textarea', required:true}],
+      onSubmit:function(v){ return transition(r, 'rejected', {rejectReason:v.reason, rejectedBy:actor().byName}, v.reason, 'تم رفض الطلب'); }});
+  }
+  function completeWash(r){
+    formModal({title:'إنجاز طلب الغسل', submitLabel:'تأكيد الإنجاز', fields:[
+      {key:'cost', label:'الكلفة بالدينار (اتركها 0 إن لم تكن هناك كلفة)', type:'number', min:0, value:num(r.cost), inputmode:'numeric'},
+      {key:'place', label:'المكان', value:r.place || ''}
+    ], onSubmit:function(v){
+      var cost = num(v.cost);
+      return transition(r, cost > 0 ? 'awaiting_finance' : 'done', {cost:cost, place:v.place}, cost > 0 ? 'أُنجز الغسل — بانتظار المالية' : 'أُنجز الغسل',
+        cost > 0 ? 'أُنجز الغسل وأُحيلت الكلفة إلى المالية' : 'تم إنجاز الطلب');
+    }});
+  }
+  function startMaintenance(r){
+    var v = vehicleById(r.vehicleId);
+    if(v) commit(db.collection('vehicles').doc(v.id).update({status:'maintenance', updatedAt:nowISO()}));
+    transition(r, 'in_progress', {startedAt:nowISO()}, '', 'بدأ التنفيذ — العجلة الآن "في الصيانة"');
+  }
+  function finishMaintenance(r){
+    formModal({title:'إنهاء الصيانة', submitLabel:'حفظ', fields:[
+      {key:'actualCost', label:'الكلفة الفعلية بالدينار', type:'number', min:0, required:true, value:r.estCost || '', inputmode:'numeric'},
+      {key:'workshop', label:'الورشة', value:r.workshop || ''},
+      {key:'odometer', label:'قراءة العداد', type:'number', min:0, value:r.odometer || currentOdo(r.vehicleId) || ''},
+      {key:'oilChanged', label:'تم تبديل الدهن في هذه الصيانة', type:'toggle'},
+      {key:'note', label:'ملاحظة', type:'textarea'}
+    ], onSubmit:function(val){
+      var cost = num(val.actualCost), v = vehicleById(r.vehicleId);
+      if(v){
+        var vu = {status:'active', updatedAt:nowISO()};
+        if(val.oilChanged) vu.lastOilChangeKm = num(val.odometer) || currentOdo(v.id);
+        commit(db.collection('vehicles').doc(v.id).update(vu));
+      }
+      return transition(r, cost > 0 ? 'awaiting_finance' : 'done', {actualCost:cost, workshop:val.workshop, odometer:val.odometer || r.odometer || null, finishedAt:nowISO()},
+        val.note || (cost > 0 ? 'انتهى العمل — بانتظار المالية' : 'انتهى العمل'), cost > 0 ? 'انتهت الصيانة وأُحيلت الكلفة إلى المالية' : 'انتهت الصيانة');
+    }});
+  }
+
+  function openRequestForm(type, presetVehicle){
+    if(!S.vehicles.length){ showToast('لا توجد عجلات مسجّلة'); return; }
+    var isDriver = role() === 'driver';
+    var myDriver = isDriver && S.profile.driverId && driverById(S.profile.driverId);
+    if(isDriver && !myDriver){ showToast('حسابك غير مرتبط بسجل سائق — راجع مدير الآليات'); return; }
+    var vid = presetVehicle || '';
+    if(!vid && myDriver){
+      var withMe = S.vehicles.find(function(v){ var s = derived.live[v.id]; return s.where === 'out' && s.driverId === myDriver.id; })
+        || S.vehicles.find(function(v){ return v.defaultDriverId === myDriver.id; });
+      if(withMe) vid = withMe.id;
+    }
+    var fields = [{key:'vehicleId', label:'العجلة', type:'select', options:vehicleOptions(), value:vid, required:true, onChange:function(id, ctx){
+      var v = vehicleById(id); if(!v) return;
+      if(type === 'fuel') ctx.set('fuelType', v.fuelType || 'petrol');
+      if(!isDriver){ var d = driverById(v.defaultDriverId); ctx.set('driver', d ? d.name : ''); }
+    }}];
+    if(!isDriver){
+      var dv = vid && vehicleById(vid), dd = dv && driverById(dv.defaultDriverId);
+      fields.push({key:'driver', label:'السائق', list:activeDrivers().map(function(d){ return d.name; }), value:dd ? dd.name : ''});
+    }
+    var v0 = vehicleById(vid);
+    if(type === 'fuel'){
+      fields.push(
+        {key:'fuelType', label:'نوع الوقود', type:'select', options:mapOptions(FUEL_LABEL), value:v0 && v0.fuelType || 'petrol', required:true},
+        {key:'liters', label:'الكمية (لتر)', type:'number', min:0, step:'0.1', required:true, inputmode:'decimal'},
+        {key:'amount', label:'المبلغ (دينار)', type:'number', min:0, required:true, inputmode:'numeric'},
+        {key:'odometer', label:'قراءة العداد', type:'number', min:0, required:true, inputmode:'numeric', help:'تُستخدم لحساب معدل الاستهلاك (كم/لتر)'},
+        {key:'station', label:'المحطة'},
+        {key:'payMethod', label:'طريقة الدفع', type:'select', options:mapOptions(PAY_LABEL), value:'cash'},
+        {key:'receipt', label:'صورة الوصل (اختياري)', type:'file', capture:true},
+        {key:'note', label:'ملاحظة', type:'textarea'}
+      );
+    } else if(type === 'maintenance'){
+      fields.push(
+        {key:'description', label:'وصف العطل أو العمل المطلوب', type:'textarea', required:true},
+        {key:'odometer', label:'قراءة العداد', type:'number', min:0, inputmode:'numeric'},
+        {key:'workshop', label:'الورشة المقترحة'},
+        {key:'estCost', label:'الكلفة التقديرية (دينار)', type:'number', min:0, inputmode:'numeric'},
+        {key:'receipt', label:'صورة (اختياري)', type:'file', capture:true}
+      );
+    } else {
+      fields.push(
+        {key:'kind', label:'نوع الطلب', type:'select', options:mapOptions(WASH_KIND), value:'wash', required:true},
+        {key:'place', label:'المكان'},
+        {key:'cost', label:'الكلفة (دينار) إن وُجدت', type:'number', min:0, inputmode:'numeric', help:'إن كانت هناك كلفة يمر الطلب على المالية'},
+        {key:'note', label:'ملاحظة', type:'textarea'}
+      );
+    }
+    var confirmKey = '';
+    formModal({title:'طلب '+REQ_TYPE[type]+' جديد', submitLabel:'إرسال الطلب', fields:fields, onSubmit:function(val){
+      var v = vehicleById(val.vehicleId);
+      if(!v) throw 'اختر العجلة';
+      if(type === 'fuel' && !(val.liters > 0)) throw 'الكمية يجب أن تكون أكبر من صفر';
+      if(val.odometer !== null && val.odometer !== undefined){
+        var last = currentOdo(v.id), warn = '';
+        if(val.odometer < last) warn = 'قراءة العداد أقل من آخر قراءة معروفة ('+fmtNum(last)+').';
+        else if(last > 0 && val.odometer - last > 3000) warn = 'قراءة العداد تزيد على آخر قراءة ('+fmtNum(last)+') بأكثر من 3,000 كم.';
+        if(warn && confirmKey !== warn){ confirmKey = warn; throw '⚠ '+warn+' تأكد منها ثم اضغط "إرسال الطلب" مرة أخرى.'; }
+      }
+      var drv = isDriver ? {driverId:myDriver.id, driverName:myDriver.name} : resolveDriver(val.driver);
+      var a = actor();
+      var data = stamp({type:type, vehicleId:v.id, driverId:drv.driverId, driverName:drv.driverName, status:'new',
+        history:[{status:'new', at:nowISO(), by:a.by, byName:a.byName, note:''}]});
+      ['fuelType','liters','amount','odometer','station','payMethod','note','description','workshop','estCost','kind','place','cost'].forEach(function(k){
+        if(val[k] !== undefined && val[k] !== '' && val[k] !== null) data[k] = val[k];
+      });
+      return saveAttachment(val.receipt, 'receipt').then(function(attId){
+        if(attId) data.receiptId = attId;
+        var ref = db.collection('requests').doc();
+        audit('request.create', 'requests', ref.id, REQ_TYPE[type]+' — '+v.plate);
+        return commit(ref.set(data), 'أُرسل طلب '+REQ_TYPE[type]);
+      });
+    }});
+  }
+
+  /* ---------------- العجلات ---------------- */
+  PANELS.vehicles = {
+    build:function(root){
+      var self = this;
+      this.search = el('input',{class:'input grow', type:'search', placeholder:'بحث برقم اللوحة أو النوع أو الجهة...', value:tabState.vehiclesSearch,
+        oninput:function(){ tabState.vehiclesSearch = self.search.value; self.refresh(); }});
+      this.chips = el('div',{class:'chip-row'});
+      this.list = el('div',{class:'grid-cards'});
+      root.appendChild(el('div',{class:'card'},[
+        el('div',{class:'row-between'},[el('h2',{text:'العجلات'}), isFleet() ? el('button',{class:'btn btn-primary', type:'button', id:'addVehicleBtn', text:'+ إضافة عجلة', onclick:function(){ openVehicleForm(null); }}) : null]),
+        el('div',{class:'row'},[this.search]), this.chips, this.list
+      ]));
+    },
+    refresh:function(){
+      var self = this, f = tabState.vehiclesFilter, q = normName(tabState.vehiclesSearch);
+      clear(this.chips);
+      [['all','الكل'],['active','فعّالة'],['maintenance','في الصيانة'],['broken','عاطلة']].forEach(function(c){
+        var n = c[0] === 'all' ? S.vehicles.length : S.vehicles.filter(function(v){ return (v.status || 'active') === c[0]; }).length;
+        self.chips.appendChild(el('button',{class:'chip'+(f === c[0] ? ' active' : ''), type:'button', text:c[1]+' ('+n+')', onclick:function(){ tabState.vehiclesFilter = c[0]; self.refresh(); }}));
+      });
+      clear(this.list);
+      var list = S.vehicles.filter(function(v){
+        if(f !== 'all' && (v.status || 'active') !== f) return false;
+        if(!q) return true;
+        return normName([v.plate, v.province, v.make, v.model, v.department, v.color, v.chassis].join(' ')).indexOf(q) >= 0;
+      }).sort(byPlate);
+      if(!list.length){ this.list.appendChild(emptyNote('لا توجد عجلات مطابقة.')); return; }
+      appendKids(this.list, list.map(function(v){
+        var s = derived.live[v.id], dd = driverById(v.defaultDriverId);
+        var warn = [];
+        [['registrationExpiry','السنوية'],['insuranceExpiry','التأمين']].forEach(function(p){ var d = daysUntil(v[p[0]]); if(d !== null && d <= settings().expiryWarnDays) warn.push(p[1]+(d < 0 ? ' منتهية' : ' تنتهي خلال '+d+' يوم')); });
+        return el('div',{class:'v-card', 'data-status':v.status === 'maintenance' || v.status === 'broken' ? 'maint' : s.where === 'out' ? (s.late ? 'late' : 'out') : 'in', 'data-vehicle':v.id},[
+          el('div',{class:'v-head'},[el('span',{class:'v-plate plate', text:v.plate}), pill(v.status || 'active', VSTATUS_LABEL[v.status || 'active'])]),
+          el('div',{class:'v-detail'},[
+            el('div',{},[[v.make, v.model, v.year, v.color].filter(Boolean).join(' · ')]),
+            el('div',{},['الوقود: ', FUEL_LABEL[v.fuelType] || '—', ' · العداد: ', el('span',{class:'num', text:fmtNum(currentOdo(v.id))})]),
+            el('div',{},['السائق الافتراضي: ', el('b',{text:dd ? dd.name : '—'})]),
+            v.department ? el('div',{},['الجهة: ', v.department]) : null,
+            el('div',{},['الآن: ', s.where === 'out' ? 'خارج الجامعة مع '+driverLabel(s.driverId, s.driverName) : 'داخل — '+(s.locationId ? locationName(s.locationId) : 'غير محدد')]),
+            warn.length ? el('div',{style:{color:'var(--busy)', fontWeight:'700'}, text:'⚠ '+warn.join('، ')}) : null
+          ]),
+          el('div',{class:'item-actions'},[
+            el('button',{class:'btn btn-sm', type:'button', text:'التفاصيل', onclick:function(){ openVehicleDetails(v.id); }}),
+            isFleet() ? el('button',{class:'btn btn-sm btn-ghost', type:'button', 'data-edit-vehicle':v.id, text:'تعديل', onclick:function(){ openVehicleForm(v); }}) : null
+          ])
+        ]);
+      }));
+    }
+  };
+  function openVehicleDetails(vid){
+    var v = vehicleById(vid); if(!v) return;
+    var s = derived.live[v.id], dd = driverById(v.defaultDriverId), avg = derived.vehicleAvg[v.id];
+    var mk = monthKey(new Date());
+    var reqs = S.requests.filter(function(r){ return r.vehicleId === v.id && r.status !== 'rejected'; });
+    var monthCost = reqs.filter(function(r){ return monthKey(r.createdAt) === mk; }).reduce(function(a,r){ return a + requestAmount(r); }, 0);
+    var kv = [
+      ['رقم اللوحة', v.plate], ['المحافظة', v.province], ['النوع والموديل', [v.make, v.model].filter(Boolean).join(' ')], ['سنة الصنع', v.year],
+      ['اللون', v.color], ['رقم الشاصي', v.chassis], ['نوع الوقود', FUEL_LABEL[v.fuelType]], ['العداد الحالي', fmtNum(currentOdo(v.id))+' كم'],
+      ['آخر تبديل دهن', v.lastOilChangeKm ? fmtNum(v.lastOilChangeKm)+' كم' : '—'], ['انتهاء السنوية', fmtDate(v.registrationExpiry)], ['انتهاء التأمين', fmtDate(v.insuranceExpiry)],
+      ['الحالة', VSTATUS_LABEL[v.status || 'active']], ['الجهة المستفيدة', v.department], ['السائق الافتراضي', dd ? dd.name : '—'],
+      ['معدل الاستهلاك', avg ? fmtNum(avg.kmpl,1)+' كم/لتر' : 'غير كافٍ للحساب'], ['صرفيات هذا الشهر', fmtIQD(monthCost)],
+      ['الموقع الآن', s.where === 'out' ? 'خارج الجامعة منذ '+fmtDT(s.since)+' مع '+driverLabel(s.driverId, s.driverName) : 'داخل — '+(s.locationId ? locationName(s.locationId) : 'غير محدد')]
+    ];
+    var photoBox = el('div');
+    if(v.photoId){
+      photoBox.appendChild(emptyNote('جارٍ تحميل الصورة...'));
+      db.collection('attachments').doc(v.photoId).get().then(function(snap){ clear(photoBox); if(snap.exists) photoBox.appendChild(el('img',{class:'photo', src:snap.data().data, alt:'صورة العجلة '+v.plate})); }).catch(function(){ clear(photoBox); });
+    }
+    var actions = [];
+    if(isFleet()) actions.push({label:'تعديل', cls:'btn-primary', onClick:function(close){ close(); openVehicleForm(v); }});
+    if(tabsForRole().indexOf('reports') >= 0) actions.push({label:'تقرير العجلة', onClick:function(close){ close(); tabState.reportType = 'vehicle'; tabState.reportEntity = v.id; goTab('reports', function(){ PANELS.reports.run(); }); }});
+    openModal({title:'العجلة '+v.plate, wide:true, body:[
+      photoBox,
+      el('dl',{class:'kv'}, kv.map(function(p){ return [el('dt',{text:p[0]}), el('dd',{text:p[1] === undefined || p[1] === '' || p[1] === null ? '—' : String(p[1])})]; })),
+      v.notes ? el('div',{class:'item-note', text:v.notes}) : null
+    ], actions:actions});
+  }
+  function openVehicleForm(v){
+    var isNew = !v; v = v || {};
+    var dd = driverById(v.defaultDriverId);
+    formModal({title:isNew ? 'إضافة عجلة' : 'تعديل العجلة '+v.plate, wide:true, submitLabel:isNew ? 'إضافة' : 'حفظ التعديلات', fields:[
+      {key:'plate', label:'رقم اللوحة', value:v.plate, required:true, placeholder:'مثال: 45821 ب'},
+      {key:'province', label:'المحافظة', value:v.province || 'كربلاء'},
+      {key:'make', label:'النوع (الشركة)', value:v.make, required:true, placeholder:'مثال: تويوتا'},
+      {key:'model', label:'الموديل', value:v.model, placeholder:'مثال: لاندكروزر'},
+      {key:'year', label:'سنة الصنع', type:'number', value:v.year, min:1970, max:2100},
+      {key:'color', label:'اللون', value:v.color},
+      {key:'chassis', label:'رقم الشاصي', value:v.chassis},
+      {key:'fuelType', label:'نوع الوقود', type:'select', options:mapOptions(FUEL_LABEL), value:v.fuelType || 'petrol'},
+      {key:'odometer', label:'العداد الحالي (كم)', type:'number', min:0, value:isNew ? '' : currentOdo(v.id)},
+      {key:'lastOilChangeKm', label:'عداد آخر تبديل دهن', type:'number', min:0, value:v.lastOilChangeKm},
+      {key:'registrationExpiry', label:'تاريخ انتهاء السنوية', type:'date', value:v.registrationExpiry},
+      {key:'insuranceExpiry', label:'تاريخ انتهاء التأمين', type:'date', value:v.insuranceExpiry},
+      {key:'status', label:'الحالة', type:'select', options:mapOptions(VSTATUS_LABEL), value:v.status || 'active'},
+      {key:'department', label:'الجهة المستفيدة', value:v.department},
+      {key:'defaultDriverId', label:'السائق الافتراضي', type:'select', options:driverOptions('بدون'), value:dd ? dd.id : ''},
+      {key:'photo', label:isNew || !v.photoId ? 'صورة العجلة (اختياري)' : 'استبدال الصورة (اختياري)', type:'file'},
+      {key:'notes', label:'ملاحظات', type:'textarea', value:v.notes}
+    ], onSubmit:function(val){
+      var dup = S.vehicles.find(function(x){ return x.id !== v.id && normName(x.plate) === normName(val.plate) && normName(x.province) === normName(val.province); });
+      if(dup) throw 'رقم اللوحة مسجّل مسبقاً للعجلة '+dup.plate;
+      var data = {};
+      ['plate','province','make','model','year','color','chassis','fuelType','odometer','lastOilChangeKm','registrationExpiry','insuranceExpiry','status','department','defaultDriverId','notes'].forEach(function(k){
+        data[k] = val[k] === null ? '' : val[k];
+      });
+      data.updatedAt = nowISO();
+      return saveAttachment(val.photo, 'vehicle').then(function(attId){
+        if(attId) data.photoId = attId;
+        if(isNew){
+          var ref = db.collection('vehicles').doc();
+          audit('vehicle.create', 'vehicles', ref.id, data.plate);
+          return commit(ref.set(stamp(data)), 'أُضيفت العجلة '+data.plate);
+        }
+        audit('vehicle.update', 'vehicles', v.id, data.plate);
+        return commit(db.collection('vehicles').doc(v.id).update(data), 'حُفظت التعديلات');
+      });
+    }});
+  }
+
+  /* ---------------- السائقون ---------------- */
+  PANELS.drivers = {
+    build:function(root){
+      var self = this;
+      this.monthInput = el('input',{class:'input', type:'month', value:tabState.pointsMonth, style:{maxWidth:'190px'}, onchange:function(){ tabState.pointsMonth = self.monthInput.value || monthKey(new Date()); self.refresh(); }});
+      this.board = el('div',{class:'stack'});
+      this.list = el('div',{class:'grid-cards'});
+      root.appendChild(el('div',{class:'card'},[
+        el('div',{class:'row-between'},[el('h2',{text:'ترتيب السائقين حسب النقاط'}), this.monthInput]),
+        el('p',{class:'muted', text:'رصيد شهري يبدأ بـ '+settings().startPoints+' نقطة. خصم تلقائي '+settings().latePenalty+' نقاط لكل تأخر في إرجاع العجلة (أكثر من '+settings().overdueHours+' ساعة)، و'+settings().fuelPenalty+' نقاط لكل تعبئة باستهلاك أعلى من معدل العجلة بأكثر من '+settings().fuelOverusePct+'%، مع خصم أو إضافة يدوية من مدير الآليات.'}),
+        this.board
+      ]));
+      root.appendChild(el('div',{class:'card'},[
+        el('div',{class:'row-between'},[el('h2',{text:'السائقون'}), isFleet() ? el('button',{class:'btn btn-primary', type:'button', id:'addDriverBtn', text:'+ إضافة سائق', onclick:function(){ openDriverForm(null); }}) : null]),
+        this.list
+      ]));
+    },
+    refresh:function(){
+      var mk = tabState.pointsMonth;
+      clear(this.board); clear(this.list);
+      var drivers = activeDrivers();
+      var scored = drivers.map(function(d){ return {d:d, s:driverScore(d.id, mk)}; }).sort(function(a,b){ return b.s.total - a.s.total || b.s.stars - a.s.stars; });
+      if(!scored.length) this.board.appendChild(emptyNote('لا يوجد سائقون مسجّلون.'));
+      var self = this;
+      scored.forEach(function(x, i){
+        var cls = x.s.total >= 90 ? 'high' : x.s.total >= 70 ? 'mid' : 'low';
+        self.board.appendChild(el('div',{class:'item', 'data-driver-rank':x.d.id},[
+          el('div',{class:'row-between'},[
+            el('div',{class:'row'},[el('span',{class:'rank', text:String(i+1)}), el('div',{class:'stack', style:{gap:'2px'}},[
+              el('b',{text:x.d.name}),
+              el('span',{class:'faint'},[x.s.trips.length+' رحلة · تأخر '+x.s.late.length+' · استهلاك مرتفع '+x.s.overFuel.length+(x.s.manualSum ? ' · يدوي '+(x.s.manualSum > 0 ? '+' : '')+x.s.manualSum : '')])
+            ])]),
+            el('div',{class:'row'},[
+              x.s.stars ? el('span',{class:'stars', text:'★'.repeat(x.s.stars)+'☆'.repeat(5-x.s.stars)}) : null,
+              el('span',{class:'points '+cls, text:fmtNum(x.s.total)})
+            ])
+          ]),
+          isFleet() ? el('div',{class:'item-actions'},[
+            el('button',{class:'btn btn-sm', type:'button', 'data-points':x.d.id, text:'± نقاط', onclick:function(){ openPointsForm(x.d, mk); }}),
+            el('button',{class:'btn btn-sm', type:'button', 'data-stars':x.d.id, text:'★ تقييم الشهر', onclick:function(){ openStarsForm(x.d, mk); }}),
+            el('button',{class:'btn btn-sm btn-ghost', type:'button', text:'السجل', onclick:function(){ openPointsHistory(x.d, mk); }})
+          ]) : el('div',{class:'item-actions'},[el('button',{class:'btn btn-sm btn-ghost', type:'button', text:'السجل', onclick:function(){ openPointsHistory(x.d, mk); }})])
+        ]));
+      });
+      S.drivers.slice().sort(function(a,b){ return a.name.localeCompare(b.name,'ar'); }).forEach(function(d){
+        var vs = S.vehicles.filter(function(v){ return v.defaultDriverId === d.id; });
+        var dl = daysUntil(d.licenseExpiry);
+        var cur = S.vehicles.filter(function(v){ var s = derived.live[v.id]; return s.where === 'out' && s.driverId === d.id; });
+        self.list.appendChild(el('div',{class:'v-card', 'data-status':d.active === false ? 'maint' : cur.length ? 'out' : 'in', 'data-driver':d.id},[
+          el('div',{class:'v-head'},[el('b',{text:d.name}), d.active === false ? pill('rejected','غير فعّال') : cur.length ? pill('out','في مهمة') : pill('in','متاح')]),
+          el('div',{class:'v-detail'},[
+            d.phone ? el('div',{},['الهاتف: ', el('span',{class:'num', text:d.phone})]) : null,
+            el('div',{},['العجلات المخصصة: ', vs.length ? vs.map(function(v){ return v.plate; }).join('، ') : '—']),
+            d.licenseExpiry ? el('div',{style:dl !== null && dl <= settings().expiryWarnDays ? {color:'var(--busy)', fontWeight:'700'} : null},['انتهاء إجازة السوق: ', fmtDate(d.licenseExpiry)]) : null,
+            cur.length ? el('div',{},['الآن مع: ', cur.map(function(v){ return v.plate; }).join('، ')]) : null
+          ]),
+          el('div',{class:'item-actions'},[
+            tabsForRole().indexOf('reports') >= 0 ? el('button',{class:'btn btn-sm', type:'button', text:'تقرير السائق', onclick:function(){ tabState.reportType = 'driver'; tabState.reportEntity = d.id; goTab('reports', function(){ PANELS.reports.run(); }); }}) : null,
+            isFleet() ? el('button',{class:'btn btn-sm btn-ghost', type:'button', 'data-edit-driver':d.id, text:'تعديل', onclick:function(){ openDriverForm(d); }}) : null
+          ])
+        ]));
+      });
+    }
+  };
+  function openDriverForm(d){
+    var isNew = !d; d = d || {};
+    formModal({title:isNew ? 'إضافة سائق' : 'تعديل بيانات '+d.name, submitLabel:isNew ? 'إضافة' : 'حفظ', fields:[
+      {key:'name', label:'الاسم الكامل', value:d.name, required:true},
+      {key:'phone', label:'رقم الهاتف', value:d.phone, type:'tel', inputmode:'tel'},
+      {key:'licenseNo', label:'رقم إجازة السوق', value:d.licenseNo},
+      {key:'licenseExpiry', label:'انتهاء إجازة السوق', type:'date', value:d.licenseExpiry},
+      {key:'active', label:'فعّال', type:'toggle', value:isNew || d.active !== false},
+      {key:'notes', label:'ملاحظات', type:'textarea', value:d.notes}
+    ], onSubmit:function(val){
+      var dup = S.drivers.find(function(x){ return x.id !== d.id && normName(x.name) === normName(val.name); });
+      if(dup) throw 'يوجد سائق مسجّل بالاسم نفسه';
+      var data = {name:val.name, phone:val.phone, licenseNo:val.licenseNo, licenseExpiry:val.licenseExpiry, active:val.active, notes:val.notes, updatedAt:nowISO()};
+      if(isNew){
+        var ref = db.collection('drivers').doc();
+        audit('driver.create', 'drivers', ref.id, val.name);
+        return commit(ref.set(stamp(data)), 'أُضيف السائق '+val.name);
+      }
+      audit('driver.update', 'drivers', d.id, val.name);
+      return commit(db.collection('drivers').doc(d.id).update(data), 'حُفظت التعديلات');
+    }});
+  }
+  function openPointsForm(d, mk){
+    formModal({title:'خصم أو إضافة نقاط — '+d.name, intro:'الشهر: '+monthLabel(mk)+'. اكتب رقماً سالباً للخصم (مثل -10) أو موجباً للإضافة.', submitLabel:'حفظ', fields:[
+      {key:'delta', label:'النقاط', type:'number', required:true, step:1, inputmode:'numeric', placeholder:'-10 أو 5'},
+      {key:'category', label:'التصنيف', type:'select', options:[opt('violation','مخالفة'), opt('accident','حادث'), opt('excellence','التزام متميز'), opt('other','أخرى')], value:'violation'},
+      {key:'reason', label:'السبب', type:'textarea', required:true}
+    ], onSubmit:function(val){
+      if(!val.delta) throw 'اكتب عدد النقاط';
+      var a = actor();
+      var ref = db.collection('driverPoints').doc();
+      audit('points.manual', 'driverPoints', ref.id, d.name+' '+val.delta+' — '+val.reason);
+      return commit(ref.set({driverId:d.id, month:mk, kind:'manual', delta:val.delta, category:val.category, reason:val.reason, by:a.by, byName:a.byName, at:nowISO()}), 'حُفظت النقاط');
+    }});
+  }
+  function openStarsForm(d, mk){
+    var cur = driverScore(d.id, mk).stars;
+    formModal({title:'تقييم الشهر — '+d.name, intro:'الشهر: '+monthLabel(mk), submitLabel:'حفظ التقييم', fields:[
+      {key:'stars', label:'التقييم', type:'select', options:[5,4,3,2,1].map(function(n){ return opt(String(n), '★'.repeat(n)+'☆'.repeat(5-n)+' ('+n+')'); }), value:String(cur || 5), required:true},
+      {key:'reason', label:'ملاحظة', type:'textarea'}
+    ], onSubmit:function(val){
+      var a = actor();
+      var ref = db.collection('driverPoints').doc();
+      audit('points.stars', 'driverPoints', ref.id, d.name+' '+val.stars+' نجوم');
+      return commit(ref.set({driverId:d.id, month:mk, kind:'stars', stars:Number(val.stars), reason:val.reason, by:a.by, byName:a.byName, at:nowISO()}), 'حُفظ التقييم');
+    }});
+  }
+  function openPointsHistory(d, mk){
+    var sc = driverScore(d.id, mk), st = settings();
+    var rows = [['رصيد بداية الشهر', '+'+st.startPoints, '']];
+    sc.late.forEach(function(t){ rows.push(['تأخر إرجاع '+(vehicleById(t.vehicleId) || {}).plate, '-'+st.latePenalty, fmtDT(t.outAt)+' ('+fmtDuration(t.durationMs)+')']); });
+    sc.overFuel.forEach(function(r){ rows.push(['استهلاك وقود مرتفع '+(vehicleById(r.vehicleId) || {}).plate, '-'+st.fuelPenalty, fmtDate(r.createdAt)+' ('+fmtNum(derived.fuelEff[r.id],1)+' كم/لتر)']); });
+    sc.manual.forEach(function(p){ rows.push([p.reason || 'يدوي', (p.delta > 0 ? '+' : '')+p.delta, fmtDate(p.at)+' — '+(p.byName || '')]); });
+    openModal({title:'سجل نقاط '+d.name+' — '+monthLabel(mk), wide:true, body:[
+      tableNode(['البند','النقاط','التفاصيل'], rows, {foot:['المجموع', fmtNum(sc.total), sc.stars ? '★'.repeat(sc.stars) : '']})
+    ]});
+  }
+
+  /* ====================================================================
+     التقارير: كل تقرير يُبنى كوصف بيانات {title, meta, stats, sections}
+     ثم يُعرض قابلاً للطباعة بـ buildReportHead() ويُصدَّر إلى Excel.
+     الخلية إما نص/رقم أو {v: قيمة خام لـ Excel, t: نص العرض}.
+     ==================================================================== */
+  function buildReportHead(titleText){
+    var logo = el('div',{class:'report-logo'},[
+      el('img',{class:'report-logo-light', src:'assets/logo-light.png', alt:'شعار جامعة العميد'}),
+      el('img',{class:'report-logo-dark', src:'assets/logo-dark.png', alt:'شعار جامعة العميد'})
+    ]);
+    return el('div',{class:'report-head'},[
+      logo,
+      el('div',{class:'report-titles'},[
+        el('div',{class:'report-univ', text:'جامعة العميد'}),
+        el('div',{class:'report-sub', text:'الشؤون الإدارية والقانونية — شعبة الآليات'}),
+        el('div',{class:'report-title', text:titleText})
+      ])
+    ]);
+  }
+  function cIQD(n){ return {v:Math.round(num(n)), t:fmtIQD(n)}; }
+  function cNum(n, d){ return {v:d ? Math.round(num(n)*10)/10 : Math.round(num(n)), t:fmtNum(n, d)}; }
+  function cellText(c){ return c && typeof c === 'object' ? c.t : (c === null || c === undefined || c === '' ? '—' : String(c)); }
+  function cellValue(c){ return c && typeof c === 'object' ? c.v : (c === null || c === undefined ? '' : stripIsolates(c)); }
+  function sumBy(list, f){ return list.reduce(function(a,x){ return a + num(f(x)); }, 0); }
+  function doneAt(r){ return r.doneAt || r.updatedAt || r.createdAt; }
+
+  function renderReport(spec, container){
+    clear(container);
+    var sheet = el('div',{class:'card report-sheet', id:'printableReport'});
+    sheet.appendChild(el('div',{class:'row no-print', id:'reportPrintRow'},[
+      el('button',{class:'btn btn-primary', type:'button', id:'printReportBtn', text:'🖨 طباعة', onclick:function(){ window.print(); }}),
+      el('button',{class:'btn', type:'button', id:'excelReportBtn', text:'📊 تصدير Excel', onclick:function(){ exportReportExcel(spec); }})
+    ]));
+    sheet.appendChild(buildReportHead(spec.title));
+    if(spec.meta && spec.meta.length) sheet.appendChild(el('div',{class:'report-meta'}, spec.meta.map(function(m){ return el('span',{},[el('b',{text:m[0]+': '}), cellText(m[1])]); })));
+    if(spec.stats && spec.stats.length) sheet.appendChild(el('div',{class:'report-stats'}, spec.stats.map(function(s){
+      return el('div',{class:'stat-box'+(s.total ? ' stat-total' : '')},[el('div',{class:'stat-num', text:cellText(s.value)}), el('div',{class:'stat-label', text:s.label})]);
+    })));
+    (spec.sections || []).forEach(function(sec){
+      sheet.appendChild(el('div',{class:'report-section-title', text:sec.title+' ('+sec.rows.length+')'}));
+      if(!sec.rows.length){ sheet.appendChild(emptyNote('لا توجد بيانات ضمن هذه الفترة.')); return; }
+      sheet.appendChild(tableNode(sec.headers, sec.rows.map(function(r){ return r.map(cellText); }), {foot:sec.foot ? sec.foot.map(cellText) : null}));
+    });
+    sheet.appendChild(el('div',{class:'faint', text:'أُعدّ بتاريخ '+fmtDT(new Date())+' بواسطة '+(S.profile ? S.profile.name : '')}));
+    sheet.appendChild(el('div',{class:'report-sign'},[el('div',{text:'مدير الآليات'}), el('div',{text:'المالية'}), el('div',{text:'مساعد رئيس الجامعة للشؤون الإدارية'})]));
+    container.appendChild(sheet);
+    container.hidden = false;
+  }
+  function exportReportExcel(spec){
+    if(!window.XLSX){ showToast('مكتبة Excel لم تُحمَّل — تحقّق من الاتصال'); return; }
+    var wb = XLSX.utils.book_new();
+    wb.Workbook = {Views:[{RTL:true}]};
+    var summary = [[spec.title], []];
+    (spec.meta || []).forEach(function(m){ summary.push([m[0], cellValue(m[1])]); });
+    summary.push([]);
+    (spec.stats || []).forEach(function(s){ summary.push([s.label, cellValue(s.value)]); });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), 'الملخص');
+    var used = {'الملخص':1};
+    (spec.sections || []).forEach(function(sec){
+      var name = sec.title.replace(/[\\\/\?\*\[\]:]/g,' ').slice(0, 28), n = name, i = 2;
+      while(used[n]) n = name.slice(0, 26)+' '+(i++);
+      used[n] = 1;
+      var rows = [sec.headers].concat(sec.rows.map(function(r){ return r.map(cellValue); }));
+      if(sec.foot) rows.push(sec.foot.map(cellValue));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), n);
+    });
+    // اسم ملف لاتيني: بعض المتصفحات تتجاهل الأسماء العربية عند التنزيل
+    XLSX.writeFile(wb, 'ameed-'+(spec.fileName || 'report')+'-'+fmtISODate(new Date())+'.xlsx');
+  }
+
+  function vehicleReportSpec(vid, from, to){
+    var v = vehicleById(vid);
+    var reqs = S.requests.filter(function(r){ return r.vehicleId === vid && inRange(r.createdAt, from, to); }).sort(function(a,b){ return String(a.createdAt).localeCompare(String(b.createdAt)); });
+    var live = reqs.filter(function(r){ return r.status !== 'rejected'; });
+    var fuel = live.filter(function(r){ return r.type === 'fuel'; });
+    var maint = live.filter(function(r){ return r.type === 'maintenance'; });
+    var wash = live.filter(function(r){ return r.type === 'wash'; });
+    var done = live.filter(function(r){ return r.status === 'done'; });
+    var trips = derived.trips.filter(function(t){ return t.vehicleId === vid && inRange(t.outAt, from, to); }).sort(function(a,b){ return String(a.outAt).localeCompare(String(b.outAt)); });
+    var readings = [];
+    S.movements.forEach(function(m){ if(m.vehicleId === vid && m.odometer && inRange(m.at, from, to)) readings.push(num(m.odometer)); });
+    live.forEach(function(r){ if(r.odometer) readings.push(num(r.odometer)); });
+    var km = readings.length > 1 ? Math.max.apply(null, readings) - Math.min.apply(null, readings) : 0;
+    var effList = fuel.filter(function(r){ return derived.fuelEff[r.id]; });
+    var effAvg = effList.length ? sumBy(effList, function(r){ return derived.fuelEff[r.id]*num(r.liters); }) / sumBy(effList, function(r){ return r.liters; }) : 0;
+    var costOf = function(list){ return sumBy(list.filter(function(r){ return r.status === 'done'; }), requestAmount); };
+    var dd = driverById(v.defaultDriverId);
+    return {
+      title:'تقرير العجلة '+v.plate, fileName:'vehicle-report',
+      meta:[['رقم اللوحة', plateText(v)], ['النوع', [v.make, v.model, v.year].filter(Boolean).join(' ')], ['الوقود', FUEL_LABEL[v.fuelType] || '—'], ['الجهة', v.department || '—'], ['السائق الافتراضي', dd ? dd.name : '—'], ['الفترة', fmtDate(from)+' إلى '+fmtDate(to)]],
+      stats:[
+        {label:'عدد الرحلات', value:cNum(trips.length)}, {label:'المسافة (كم)', value:cNum(km)},
+        {label:'الوقود (لتر)', value:cNum(sumBy(fuel, function(r){ return r.liters; }), 1)}, {label:'معدل الاستهلاك (كم/لتر)', value:effAvg ? cNum(effAvg, 1) : '—'},
+        {label:'كلفة الوقود', value:cIQD(costOf(fuel))}, {label:'كلفة الصيانة', value:cIQD(costOf(maint))}, {label:'كلفة الغسل', value:cIQD(costOf(wash))},
+        {label:'مبالغ قيد الإجراء', value:cIQD(sumBy(live.filter(function(r){ return r.status !== 'done'; }), function(r){ return requestAmount(r) || r.estCost; }))},
+        {label:'مجموع الصرفيات المؤيدة', value:cIQD(sumBy(done, requestAmount)), total:true}
+      ],
+      sections:[
+        {title:'صرفيات الوقود', headers:['التاريخ','النوع','اللترات','المبلغ','العداد','كم/لتر','المحطة','الدفع','السائق','الحالة'],
+          rows:fuel.map(function(r){ return [fmtDate(r.createdAt), FUEL_LABEL[r.fuelType] || '', cNum(r.liters,1), cIQD(r.amount), cNum(r.odometer), derived.fuelEff[r.id] ? cNum(derived.fuelEff[r.id],1) : '', r.station, PAY_LABEL[r.payMethod] || '', driverLabel(r.driverId, r.driverName), STATUS_LABEL[r.status]]; }),
+          foot:['المجموع','',cNum(sumBy(fuel, function(r){ return r.liters; }),1), cIQD(sumBy(fuel, function(r){ return r.amount; })),'','','','','','']},
+        {title:'الصيانة', headers:['التاريخ','الوصف','الورشة','الكلفة التقديرية','الكلفة الفعلية','الحالة'],
+          rows:maint.map(function(r){ return [fmtDate(r.createdAt), r.description, r.workshop, r.estCost ? cIQD(r.estCost) : '', r.actualCost !== undefined ? cIQD(r.actualCost) : '', STATUS_LABEL[r.status]]; })},
+        {title:'الغسل والتنظيف', headers:['التاريخ','النوع','المكان','الكلفة','الحالة'],
+          rows:wash.map(function(r){ return [fmtDate(r.createdAt), WASH_KIND[r.kind] || '', r.place, cIQD(r.cost), STATUS_LABEL[r.status]]; })},
+        {title:'الرحلات', headers:['الخروج','الدخول','السائق','المدة','المسافة','الوجهة'],
+          rows:trips.map(function(t){ return [fmtDT(t.outAt), t.inAt ? fmtDT(t.inAt) : 'لم تعد', driverLabel(t.driverId, t.driverName), fmtDuration(t.durationMs)+(t.late ? ' ⚠' : ''), t.km ? cNum(t.km) : '', t.purpose]; })}
+      ]
+    };
+  }
+  function driverReportSpec(did, from, to){
+    var d = driverById(did);
+    var trips = derived.trips.filter(function(t){ return t.driverId === did && inRange(t.outAt, from, to); }).sort(function(a,b){ return String(a.outAt).localeCompare(String(b.outAt)); });
+    var reqs = S.requests.filter(function(r){ return r.driverId === did && inRange(r.createdAt, from, to); }).sort(function(a,b){ return String(a.createdAt).localeCompare(String(b.createdAt)); });
+    var byV = {};
+    trips.forEach(function(t){ var x = byV[t.vehicleId] = byV[t.vehicleId] || {trips:0, ms:0, km:0}; x.trips++; x.ms += t.durationMs; x.km += num(t.km); });
+    var mk = monthKey(to), sc = driverScore(did, mk), st = settings();
+    var pointsRows = [['رصيد بداية الشهر', '+'+st.startPoints, '']];
+    sc.late.forEach(function(t){ pointsRows.push(['تأخر إرجاع '+(vehicleById(t.vehicleId) || {}).plate, '-'+st.latePenalty, fmtDT(t.outAt)]); });
+    sc.overFuel.forEach(function(r){ pointsRows.push(['استهلاك وقود مرتفع', '-'+st.fuelPenalty, fmtDate(r.createdAt)]); });
+    sc.manual.forEach(function(p){ pointsRows.push([p.reason || 'يدوي', (p.delta > 0 ? '+' : '')+p.delta, fmtDate(p.at)]); });
+    return {
+      title:'تقرير السائق '+d.name, fileName:'driver-report',
+      meta:[['السائق', d.name], ['الهاتف', d.phone || '—'], ['الفترة', fmtDate(from)+' إلى '+fmtDate(to)], ['نقاط شهر', monthLabel(mk)]],
+      stats:[
+        {label:'عدد الرحلات', value:cNum(trips.length)}, {label:'ساعات خارج الجامعة', value:cNum(sumBy(trips, function(t){ return t.durationMs; })/3600000, 1)},
+        {label:'العجلات التي ساقها', value:cNum(Object.keys(byV).length)}, {label:'مرات التأخر', value:cNum(trips.filter(function(t){ return t.late; }).length)},
+        {label:'الطلبات', value:cNum(reqs.length)}, {label:'التقييم', value:sc.stars ? '★'.repeat(sc.stars) : '—'},
+        {label:'النقاط', value:cNum(sc.total), total:true}
+      ],
+      sections:[
+        {title:'العجلات التي ساقها', headers:['العجلة','الرحلات','الساعات','المسافة (كم)'],
+          rows:Object.keys(byV).map(function(vid){ var x = byV[vid]; return [vehicleLabel(vehicleById(vid)), cNum(x.trips), cNum(x.ms/3600000,1), cNum(x.km)]; })},
+        {title:'الرحلات', headers:['العجلة','الخروج','الدخول','المدة','الوجهة'],
+          rows:trips.map(function(t){ return [vehicleLabel(vehicleById(t.vehicleId)), fmtDT(t.outAt), t.inAt ? fmtDT(t.inAt) : 'لم تعد', fmtDuration(t.durationMs)+(t.late ? ' ⚠ متأخرة' : ''), t.purpose]; })},
+        {title:'الطلبات', headers:['التاريخ','النوع','العجلة','المبلغ','الحالة'],
+          rows:reqs.map(function(r){ return [fmtDate(r.createdAt), REQ_TYPE[r.type], vehicleLabel(vehicleById(r.vehicleId)), cIQD(requestAmount(r)), STATUS_LABEL[r.status]]; })},
+        {title:'سجل النقاط — '+monthLabel(mk), headers:['البند','النقاط','التفاصيل'], rows:pointsRows, foot:['المجموع', cNum(sc.total), '']}
+      ]
+    };
+  }
+  function financeReportSpec(mk){
+    var done = S.requests.filter(function(r){ return r.status === 'done' && monthKey(doneAt(r)) === mk && requestAmount(r) > 0; }).sort(function(a,b){ return String(doneAt(a)).localeCompare(String(doneAt(b))); });
+    var awaiting = S.requests.filter(function(r){ return r.status === 'awaiting_finance'; });
+    var byType = function(t){ return sumBy(done.filter(function(r){ return r.type === t; }), requestAmount); };
+    var byV = {};
+    done.forEach(function(r){ var x = byV[r.vehicleId] = byV[r.vehicleId] || {fuel:0, maintenance:0, wash:0, liters:0}; x[r.type] += requestAmount(r); if(r.type === 'fuel') x.liters += num(r.liters); });
+    var fuel = done.filter(function(r){ return r.type === 'fuel'; });
+    var vRows = Object.keys(byV).map(function(vid){ var x = byV[vid]; return [vehicleLabel(vehicleById(vid)), cNum(x.liters,1), cIQD(x.fuel), cIQD(x.maintenance), cIQD(x.wash), cIQD(x.fuel+x.maintenance+x.wash)]; })
+      .sort(function(a,b){ return b[5].v - a[5].v; });
+    return {
+      title:'الملخص المالي الشهري — '+monthLabel(mk), fileName:'finance-'+mk,
+      meta:[['الشهر', monthLabel(mk)], ['المعيار', 'الطلبات المؤيدة من المالية خلال الشهر']],
+      stats:[
+        {label:'الوقود', value:cIQD(byType('fuel'))}, {label:'الصيانة', value:cIQD(byType('maintenance'))}, {label:'الغسل والتنظيف', value:cIQD(byType('wash'))},
+        {label:'عدد الطلبات', value:cNum(done.length)}, {label:'بانتظار المالية الآن', value:cIQD(sumBy(awaiting, requestAmount))},
+        {label:'المجموع', value:cIQD(sumBy(done, requestAmount)), total:true}
+      ],
+      sections:[
+        {title:'حسب العجلة', headers:['العجلة','الوقود (لتر)','الوقود','الصيانة','الغسل','المجموع'], rows:vRows,
+          foot:['المجموع', cNum(sumBy(fuel, function(r){ return r.liters; }),1), cIQD(byType('fuel')), cIQD(byType('maintenance')), cIQD(byType('wash')), cIQD(sumBy(done, requestAmount))]},
+        {title:'الوقود حسب طريقة الدفع', headers:['طريقة الدفع','عدد التعبئات','اللترات','المبلغ'],
+          rows:Object.keys(PAY_LABEL).map(function(k){ var l = fuel.filter(function(r){ return (r.payMethod || 'cash') === k; }); return [PAY_LABEL[k], cNum(l.length), cNum(sumBy(l, function(r){ return r.liters; }),1), cIQD(sumBy(l, requestAmount))]; })},
+        {title:'تفاصيل الطلبات المؤيدة', headers:['تاريخ التأييد','النوع','العجلة','السائق','المبلغ','أيّده'],
+          rows:done.map(function(r){ return [fmtDate(doneAt(r)), REQ_TYPE[r.type], vehicleLabel(vehicleById(r.vehicleId)), driverLabel(r.driverId, r.driverName), cIQD(requestAmount(r)), r.financeBy || '']; })}
+      ]
+    };
+  }
+  function requestsReportSpec(from, to, type){
+    var reqs = S.requests.filter(function(r){ return inRange(r.createdAt, from, to) && (!type || r.type === type); }).sort(function(a,b){ return String(a.createdAt).localeCompare(String(b.createdAt)); });
+    var open = reqs.filter(function(r){ return OPEN_STATUSES.indexOf(r.status) >= 0; });
+    var done = reqs.filter(function(r){ return r.status === 'done'; });
+    var rej = reqs.filter(function(r){ return r.status === 'rejected'; });
+    return {
+      title:'بيان الطلبات المنجزة وغير المنجزة'+(type ? ' — '+REQ_TYPE[type] : ''), fileName:'requests-statement',
+      meta:[['الفترة', fmtDate(from)+' إلى '+fmtDate(to)], ['النوع', type ? REQ_TYPE[type] : 'جميع الأنواع']],
+      stats:[{label:'مجموع الطلبات', value:cNum(reqs.length), total:true}, {label:'منجزة', value:cNum(done.length)}, {label:'غير منجزة', value:cNum(open.length)}, {label:'مرفوضة', value:cNum(rej.length)}],
+      sections:[
+        {title:'الطلبات غير المنجزة', headers:['التاريخ','النوع','العجلة','السائق','المرحلة الحالية','عمر الطلب (يوم)','المبلغ'],
+          rows:open.map(function(r){ return [fmtDate(r.createdAt), REQ_TYPE[r.type], vehicleLabel(vehicleById(r.vehicleId)), driverLabel(r.driverId, r.driverName), STATUS_LABEL[r.status], cNum(-daysUntil(r.createdAt)), cIQD(requestAmount(r) || r.estCost)]; })},
+        {title:'الطلبات المنجزة', headers:['التاريخ','تاريخ الإنجاز','النوع','العجلة','السائق','المبلغ'],
+          rows:done.map(function(r){ return [fmtDate(r.createdAt), fmtDate(doneAt(r)), REQ_TYPE[r.type], vehicleLabel(vehicleById(r.vehicleId)), driverLabel(r.driverId, r.driverName), cIQD(requestAmount(r))]; })},
+        {title:'الطلبات المرفوضة', headers:['التاريخ','النوع','العجلة','السبب','رفضه'],
+          rows:rej.map(function(r){ return [fmtDate(r.createdAt), REQ_TYPE[r.type], vehicleLabel(vehicleById(r.vehicleId)), r.rejectReason, r.rejectedBy]; })}
+      ]
+    };
+  }
+  function movementsReportSpec(from, to, loc){
+    var movs = S.movements.filter(function(m){ return inRange(m.at, from, to) && (!loc || m.locationId === loc); }).sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); });
+    var vs = {}; movs.forEach(function(m){ vs[m.vehicleId] = 1; });
+    return {
+      title:'سجل حركة العجلات', fileName:'movements-log',
+      meta:[['الفترة', fmtDate(from)+' إلى '+fmtDate(to)], ['الموقع', loc ? locationName(loc) : 'جميع المواقع']],
+      stats:[{label:'مجموع الحركات', value:cNum(movs.length), total:true}, {label:'خروج', value:cNum(movs.filter(function(m){ return m.direction === 'out'; }).length)}, {label:'دخول', value:cNum(movs.filter(function(m){ return m.direction === 'in'; }).length)}, {label:'عدد العجلات', value:cNum(Object.keys(vs).length)}],
+      sections:[{title:'الحركات', headers:['الوقت','الاتجاه','العجلة','السائق','الموقع','العداد','الوجهة','ملاحظة','سجّلها'],
+        rows:movs.map(function(m){ return [fmtDT(m.at), m.direction === 'out' ? 'خروج' : 'دخول', vehicleLabel(vehicleById(m.vehicleId)), driverLabel(m.driverId, m.driverName), locationName(m.locationId), m.odometer ? cNum(m.odometer) : '', m.purpose, m.note, m.byName]; })}]
+    };
+  }
+
+  /* ---------------- تبويب التقارير ---------------- */
+  var REPORT_TYPES = [['vehicle','تقرير عجلة'],['driver','تقرير سائق'],['finance','الملخص المالي الشهري'],['requests','بيان الطلبات'],['movements','سجل الحركة']];
+  PANELS.reports = {
+    build:function(root){
+      var self = this, today = new Date(), first = new Date(today.getFullYear(), today.getMonth(), 1);
+      this.chips = el('div',{class:'chip-row'});
+      this.params = el('div',{class:'form-grid'});
+      this.result = el('div',{hidden:true});
+      this.inputs = {
+        vehicle:el('select',{id:'repVehicle'}), driver:el('select',{id:'repDriver'}),
+        from:el('input',{id:'repFrom', type:'date', value:tabState.reportFrom || fmtISODate(first)}), to:el('input',{id:'repTo', type:'date', value:tabState.reportTo || fmtISODate(today)}),
+        month:el('input',{id:'repMonth', type:'month', value:tabState.financeMonth}),
+        type:el('select',{id:'repType'}, [opt('', 'جميع الأنواع')].concat(mapOptions(REQ_TYPE)).map(function(o){ return el('option',{value:o.value, text:o.label}); })),
+        loc:el('select',{id:'repLoc'})
+      };
+      root.appendChild(el('div',{class:'card no-print'},[
+        el('h2',{text:'التقارير'}),
+        el('p',{class:'muted', text:'جميع التقارير قابلة للطباعة بشعار الجامعة، ويمكن تصديرها إلى Excel.'}),
+        this.chips, this.params,
+        el('div',{class:'row'},[el('button',{class:'btn btn-primary btn-lg', type:'button', id:'runReportBtn', text:'عرض التقرير', onclick:function(){ self.run(); }})])
+      ]));
+      root.appendChild(this.result);
+      this.buildParams();
+    },
+    buildParams:function(){
+      var self = this, t = tabState.reportType, i = this.inputs;
+      clear(this.chips);
+      REPORT_TYPES.forEach(function(r){ self.chips.appendChild(el('button',{class:'chip'+(t === r[0] ? ' active' : ''), type:'button', 'data-report':r[0], text:r[1], onclick:function(){ tabState.reportType = r[0]; self.buildParams(); self.result.hidden = true; }})); });
+      clear(this.params);
+      function field(label, input){ return el('div',{class:'field'},[el('label',{'for':input.id, text:label}), input]); }
+      if(t === 'vehicle') this.params.appendChild(field('العجلة', i.vehicle));
+      if(t === 'driver') this.params.appendChild(field('السائق', i.driver));
+      if(t === 'requests') this.params.appendChild(field('نوع الطلب', i.type));
+      if(t === 'movements') this.params.appendChild(field('الموقع', i.loc));
+      if(t === 'finance') this.params.appendChild(field('الشهر', i.month));
+      else { this.params.appendChild(field('من تاريخ', i.from)); this.params.appendChild(field('إلى تاريخ', i.to)); }
+      this.refresh();
+    },
+    refresh:function(){
+      var i = this.inputs;
+      function fill(sel, options, value){
+        var cur = value !== undefined ? value : sel.value;
+        clear(sel); options.forEach(function(o){ sel.appendChild(el('option',{value:o.value, text:o.label})); });
+        sel.value = cur;
+      }
+      fill(i.vehicle, vehicleOptions(), tabState.reportType === 'vehicle' && tabState.reportEntity ? tabState.reportEntity : undefined);
+      fill(i.driver, [opt('', 'اختر السائق...')].concat(S.drivers.slice().sort(function(a,b){ return a.name.localeCompare(b.name,'ar'); }).map(function(d){ return opt(d.id, d.name); })), tabState.reportType === 'driver' && tabState.reportEntity ? tabState.reportEntity : undefined);
+      fill(i.loc, [opt('', 'جميع المواقع')].concat(locations().map(function(l){ return opt(l.id, l.name); })));
+    },
+    run:function(){
+      var t = tabState.reportType, i = this.inputs;
+      tabState.reportEntity = '';
+      tabState.reportFrom = i.from.value; tabState.reportTo = i.to.value;
+      var from = i.from.value ? startOfDay(i.from.value) : new Date(2000,0,1), to = i.to.value ? endOfDay(i.to.value) : new Date();
+      if(from > to){ showToast('تاريخ البداية بعد تاريخ النهاية'); return; }
+      var spec;
+      if(t === 'vehicle'){ if(!i.vehicle.value){ showToast('اختر العجلة'); return; } spec = vehicleReportSpec(i.vehicle.value, from, to); }
+      else if(t === 'driver'){ if(!i.driver.value){ showToast('اختر السائق'); return; } spec = driverReportSpec(i.driver.value, from, to); }
+      else if(t === 'finance'){ tabState.financeMonth = i.month.value || monthKey(new Date()); spec = financeReportSpec(tabState.financeMonth); }
+      else if(t === 'requests') spec = requestsReportSpec(from, to, i.type.value);
+      else spec = movementsReportSpec(from, to, i.loc.value);
+      renderReport(spec, this.result);
+      this.result.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+  };
+
+  /* ---------------- المالية ---------------- */
+  PANELS.finance = {
+    build:function(root){
+      var self = this;
+      this.queue = el('div',{class:'card'});
+      this.month = el('input',{class:'input', type:'month', value:tabState.financeMonth, style:{maxWidth:'190px'}, onchange:function(){ tabState.financeMonth = self.month.value || monthKey(new Date()); self.refresh(); }});
+      this.summary = el('div');
+      appendKids(root, [this.queue, el('div',{class:'card no-print'},[el('div',{class:'row-between'},[el('h2',{text:'الملخص المالي الشهري'}), this.month])]), this.summary]);
+    },
+    refresh:function(){
+      clear(this.queue);
+      var q = S.requests.filter(function(r){ return r.status === 'awaiting_finance'; }).sort(byCreatedDesc);
+      this.queue.appendChild(el('div',{class:'row-between'},[el('h2',{text:'بانتظار تأييد المالية ('+q.length+')'}), el('span',{class:'badge', text:fmtIQD(sumBy(q, requestAmount))})]));
+      this.queue.appendChild(q.length ? el('div',{class:'stack'}, q.map(requestItem)) : emptyNote('لا توجد مبالغ بانتظار التأييد.'));
+      renderReport(financeReportSpec(tabState.financeMonth), this.summary);
+    }
+  };
+
+  /* ---------------- الإدارة ---------------- */
+  PANELS.admin = {
+    build:function(root){
+      var self = this;
+      this.users = el('div',{class:'stack'});
+      this.locs = el('div',{class:'stack'});
+      this.settingsBox = el('div');
+      this.auditBox = el('div');
+      root.appendChild(el('div',{class:'card'},[
+        el('div',{class:'row-between'},[el('h2',{text:'المستخدمون'}), el('button',{class:'btn btn-primary', type:'button', id:'addUserBtn', text:'+ حساب جديد', onclick:function(){ openUserForm(null); }})]),
+        el('p',{class:'muted', text:'لكل موظف حساب شخصي (اسم مستخدم + كلمة مرور). موظف الاستعلامات يسجّل الحركة في مواقعه المحددة فقط. حساب السائق يُربط بسجله في قائمة السائقين.'}),
+        this.users
+      ]));
+      root.appendChild(el('div',{class:'card'},[
+        el('div',{class:'row-between'},[el('h2',{text:'المواقع والبوابات'}), el('button',{class:'btn', type:'button', id:'addLocationBtn', text:'+ إضافة موقع', onclick:function(){ openLocationForm(null); }})]),
+        this.locs
+      ]));
+      root.appendChild(el('div',{class:'card'},[el('h2',{text:'الإعدادات'}), this.settingsBox]));
+      root.appendChild(buildImportCard());
+      root.appendChild(el('div',{class:'card'},[
+        el('h2',{text:'البيانات التجريبية'}),
+        el('p',{class:'muted', text:'البيانات التجريبية معلَّمة بالحقل demo:true. يمكن إضافتها لعرض النظام، ثم حذفها كلها قبل البدء بالبيانات الحقيقية.'}),
+        el('div',{class:'row'},[
+          el('button',{class:'btn', type:'button', id:'seedDemoBtn', text:'إضافة بيانات تجريبية', onclick:function(){ confirmModal('إضافة بيانات تجريبية','ستُضاف عجلات وسائقون وحركات وطلبات تجريبية معلَّمة بـ demo:true.','إضافة', function(){ addDemoData(); }); }}),
+          el('button',{class:'btn btn-danger', type:'button', id:'deleteDemoBtn', text:'حذف البيانات التجريبية', onclick:function(){ deleteDemoData(); }})
+        ])
+      ]));
+      root.appendChild(el('div',{class:'card'},[el('h2',{text:'سجل التدقيق (آخر 200 عملية)'}), this.auditBox]));
+    },
+    refresh:function(){
+      var self = this;
+      clear(this.users);
+      S.users.slice().sort(function(a,b){ return ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || String(a.name).localeCompare(String(b.name),'ar'); }).forEach(function(u){
+        var extra = [];
+        if(u.role === 'gate') extra.push('المواقع: '+((u.locations || []).map(locationName).join('، ') || 'لا يوجد'));
+        if(u.role === 'driver') extra.push('السائق: '+(u.driverId && driverById(u.driverId) ? driverById(u.driverId).name : 'غير مرتبط'));
+        self.users.appendChild(el('div',{class:'item', 'data-user':u.id},[
+          el('div',{class:'item-top'},[
+            el('span',{class:'item-title'},[u.name, ' ', el('span',{class:'faint num', text:'@'+u.username})]),
+            el('span',{class:'row', style:{gap:'4px'}},[pill('approved', ROLE_LABEL[u.role] || u.role), u.active === false ? pill('rejected','موقوف') : null])
+          ]),
+          extra.length ? el('div',{class:'item-meta', text:extra.join(' · ')}) : null,
+          el('div',{class:'item-actions'},[el('button',{class:'btn btn-sm', type:'button', text:'تعديل', onclick:function(){ openUserForm(u); }})])
+        ]));
+      });
+      clear(this.locs);
+      locations().forEach(function(l){
+        var gates = S.users.filter(function(u){ return u.role === 'gate' && (u.locations || []).indexOf(l.id) >= 0; }).map(function(u){ return u.name; });
+        self.locs.appendChild(el('div',{class:'item'},[el('div',{class:'row-between'},[
+          el('div',{class:'stack', style:{gap:'2px'}},[el('b',{text:l.name}), el('span',{class:'faint', text:gates.length ? 'الاستعلامات: '+gates.join('، ') : 'لا يوجد موظف استعلامات مرتبط'})]),
+          el('button',{class:'btn btn-sm', type:'button', text:'تعديل الاسم', onclick:function(){ openLocationForm(l); }})
+        ])]));
+      });
+      clear(this.settingsBox);
+      var st = settings();
+      var labels = {overdueHours:'تنبيه العجلة الخارجة بعد (ساعة)', expiryWarnDays:'تنبيه انتهاء السنوية والتأمين قبل (يوم)', oilChangeKm:'تبديل الدهن كل (كم)',
+        fuelOverusePct:'نسبة الاستهلاك المرتفع (%)', startPoints:'رصيد السائق الشهري (نقطة)', latePenalty:'خصم التأخر (نقطة)', fuelPenalty:'خصم الاستهلاك المرتفع (نقطة)'};
+      this.settingsBox.appendChild(el('div',{class:'kv'}, Object.keys(labels).map(function(k){ return [el('dt',{text:labels[k]}), el('dd',{class:'num', text:String(st[k])})]; })));
+      this.settingsBox.appendChild(el('div',{class:'row', style:{marginTop:'10px'}},[el('button',{class:'btn', type:'button', id:'editSettingsBtn', text:'تعديل الإعدادات', onclick:function(){
+        formModal({title:'الإعدادات', submitLabel:'حفظ', fields:Object.keys(labels).map(function(k){ return {key:k, label:labels[k], type:'number', min:0, value:st[k], required:true}; }),
+          onSubmit:function(val){ audit('config.settings', 'config', 'general', JSON.stringify(val)); return commit(configDoc().update({settings:val}), 'حُفظت الإعدادات'); }});
+      }})]));
+      clear(this.auditBox);
+      var logs = S.audit.slice().sort(function(a,b){ return String(b.at).localeCompare(String(a.at)); }).slice(0, 200);
+      this.auditBox.appendChild(logs.length ? tableNode(['الوقت','المستخدم','العملية','التفاصيل'], logs.map(function(a){ return [fmtDT(a.at), a.byName, a.action, a.details]; })) : emptyNote('لا توجد عمليات مسجّلة بعد.'));
+    }
+  };
+  function createAuthUser(username, password){
+    var sec = FB.apps.find(function(a){ return a.name === 'secondary'; }) || FB.initializeApp(firebaseConfig, 'secondary');
+    var sa = sec.auth();
+    return sa.createUserWithEmailAndPassword(usernameToEmail(username), password).then(function(cred){
+      var id = cred.user.uid;
+      return sa.signOut().then(function(){ return id; });
+    });
+  }
+  function openUserForm(u){
+    var isNew = !u; u = u || {};
+    var locOpts = locations().map(function(l){ return opt(l.id, l.name); });
+    function toggle(r, ctx){ ctx.show('locations', r === 'gate'); ctx.show('driverId', r === 'driver'); }
+    var fields = [{key:'name', label:'الاسم', value:u.name, required:true}];
+    if(isNew) fields.push(
+      {key:'username', label:'اسم المستخدم', required:true, placeholder:'مثال: ali.hussein', help:'أحرف إنجليزية صغيرة وأرقام و(. _ -)', autocomplete:'off'},
+      {key:'password', label:'كلمة المرور', type:'password', required:true, help:'6 أحرف على الأقل', autocomplete:'new-password'}
+    );
+    fields.push(
+      {key:'role', label:'الدور', type:'select', options:ROLES.map(function(r){ return opt(r, ROLE_LABEL[r]); }), value:u.role || 'gate', required:true, onChange:toggle},
+      {key:'locations', label:'مواقع الاستعلامات', type:'checks', options:locOpts, value:u.locations || []},
+      {key:'driverId', label:'سجل السائق المرتبط', type:'select', options:driverOptions('غير مرتبط'), value:u.driverId || ''},
+      {key:'active', label:'الحساب فعّال', type:'toggle', value:isNew || u.active !== false}
+    );
+    formModal({title:isNew ? 'حساب جديد' : 'تعديل حساب '+u.name, submitLabel:isNew ? 'إنشاء الحساب' : 'حفظ', fields:fields,
+      intro:isNew ? '' : 'اسم المستخدم: '+u.username+'. لإعادة تعيين كلمة مرور موظف استخدم Firebase Console > Authentication، أو أوقف الحساب وأنشئ حساباً جديداً.',
+      onOpen:function(ctx){ toggle(u.role || 'gate', ctx); },
+      onSubmit:function(val){
+        if(val.role === 'gate' && !val.locations.length) throw 'اختر موقعاً واحداً على الأقل لموظف الاستعلامات';
+        if(!isNew && u.id === S.authUser.uid && (val.role !== 'admin' || !val.active)) throw 'لا يمكنك إزالة صلاحية مدير النظام عن حسابك أو إيقافه';
+        var data = {name:val.name, role:val.role, locations:val.role === 'gate' ? val.locations : [], driverId:val.role === 'driver' ? val.driverId : '', active:val.active, updatedAt:nowISO()};
+        if(!isNew){
+          audit('user.update', 'users', u.id, u.username+' → '+val.role+(val.active ? '' : ' (موقوف)'));
+          return commit(db.collection('users').doc(u.id).update(data), 'حُفظ الحساب');
+        }
+        var un = val.username.toLowerCase();
+        if(!validUsername(un)) throw 'اسم المستخدم: 3–30 حرفاً إنجليزياً صغيراً أو رقماً أو (. _ -)';
+        if(S.users.some(function(x){ return x.username === un; })) throw 'اسم المستخدم مستخدم مسبقاً';
+        return createAuthUser(un, val.password).then(function(newUid){
+          data.username = un; data.createdAt = nowISO();
+          audit('user.create', 'users', newUid, un+' — '+ROLE_LABEL[val.role]);
+          return commit(db.collection('users').doc(newUid).set(data), 'أُنشئ الحساب '+un);
+        });
+      }});
+  }
+  function openLocationForm(l){
+    formModal({title:l ? 'تعديل الموقع' : 'إضافة موقع', submitLabel:'حفظ', fields:[{key:'name', label:'اسم الموقع أو البوابة', value:l ? l.name : '', required:true}],
+      onSubmit:function(val){
+        var list = locations().map(function(x){ return {id:x.id, name:x.name}; });
+        if(list.some(function(x){ return normName(x.name) === normName(val.name) && (!l || x.id !== l.id); })) throw 'يوجد موقع بالاسم نفسه';
+        if(l) list.forEach(function(x){ if(x.id === l.id) x.name = val.name; });
+        else {
+          var id = slug(val.name), base = id, i = 2;
+          while(list.some(function(x){ return x.id === id; })) id = base+'-'+(i++);
+          list.push({id:id, name:val.name});
+        }
+        audit(l ? 'location.rename' : 'location.create', 'config', 'general', val.name);
+        return commit(configDoc().update({locations:list}), 'حُفظ الموقع');
+      }});
+  }
+
+  /* ---------------- استيراد العجلات والسائقين من Excel ---------------- */
+  var IMPORT_COLS = {
+    vehicles:[['plate','رقم اللوحة'],['province','المحافظة'],['make','النوع'],['model','الموديل'],['year','السنة'],['color','اللون'],['chassis','رقم الشاصي'],['fuelType','نوع الوقود'],['odometer','العداد'],['registrationExpiry','انتهاء السنوية'],['insuranceExpiry','انتهاء التأمين'],['department','الجهة المستفيدة'],['defaultDriver','السائق الافتراضي'],['notes','ملاحظات']],
+    drivers:[['name','الاسم'],['phone','الهاتف'],['licenseNo','رقم إجازة السوق'],['licenseExpiry','انتهاء إجازة السوق'],['notes','ملاحظات']]
+  };
+  function buildImportCard(){
+    var preview = el('div',{id:'importPreview'});
+    var fileLabel = el('span',{class:'faint', text:'لم يُختر ملف بعد'});
+    var fileInput = el('input',{type:'file', id:'importFile', accept:'.xlsx,.xls,.csv', style:{display:'none'}, onchange:function(){
+      var f = fileInput.files[0]; if(!f) return;
+      fileLabel.textContent = f.name;
+      if(!window.XLSX){ showToast('مكتبة Excel لم تُحمَّل — تحقّق من الاتصال'); return; }
+      var rd = new FileReader();
+      rd.onload = function(){
+        try{ showImportPreview(XLSX.read(new Uint8Array(rd.result), {type:'array', cellDates:true}), preview); }
+        catch(e){ console.error(e); clear(preview).appendChild(el('p',{class:'error-text', text:'تعذّرت قراءة الملف: '+e.message})); }
+        fileInput.value = '';
+      };
+      rd.readAsArrayBuffer(f);
+    }});
+    return el('div',{class:'card'},[
+      el('h2',{text:'استيراد العجلات والسائقين من Excel'}),
+      el('p',{class:'muted', text:'نزّل النموذج (ورقتان: العجلات والسائقون)، عبّئه، ثم ارفعه. الاستيراد إضافي فقط: الصفوف المكررة (اللوحة نفسها أو الاسم نفسه) تُتجاوز ولا تُعدَّل البيانات الموجودة. التواريخ بصيغة YYYY-MM-DD، ونوع الوقود: بنزين أو كاز.'}),
+      el('div',{class:'row'},[el('button',{class:'btn', type:'button', id:'importTemplateBtn', text:'📥 تنزيل النموذج', onclick:downloadImportTemplate})]),
+      el('div',{class:'file-drop'},[el('label',{'for':'importFile', class:'btn btn-primary', style:{cursor:'pointer'}, text:'📄 اختر ملف Excel'}), fileInput, fileLabel]),
+      preview
+    ]);
+  }
+  function downloadImportTemplate(){
+    if(!window.XLSX){ showToast('مكتبة Excel لم تُحمَّل — تحقّق من الاتصال'); return; }
+    var wb = XLSX.utils.book_new(); wb.Workbook = {Views:[{RTL:true}]};
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([IMPORT_COLS.vehicles.map(function(c){ return c[1]; }), ['45821 ب','كربلاء','تويوتا','لاندكروزر',2021,'أبيض','JTM123456789','كاز',85000,'2027-03-01','2027-01-15','رئاسة الجامعة','علي حسين','']]), 'العجلات');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([IMPORT_COLS.drivers.map(function(c){ return c[1]; }), ['علي حسين','07801234567','123456','2028-05-01','']]), 'السائقون');
+    XLSX.writeFile(wb, 'ameed-vehicles-import-template.xlsx');
+  }
+  function parseImportSheet(ws, kind){
+    var rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:'', raw:true});
+    if(!rows.length) return [];
+    var head = rows[0].map(function(h){ return normName(h); });
+    var idx = {};
+    IMPORT_COLS[kind].forEach(function(c){ idx[c[0]] = head.indexOf(normName(c[1])); });
+    return rows.slice(1).filter(function(r){ return r.some(function(c){ return String(c).trim() !== ''; }); }).map(function(r){
+      var o = {};
+      Object.keys(idx).forEach(function(k){
+        var v = idx[k] >= 0 ? r[idx[k]] : '';
+        if(v instanceof Date) v = fmtISODate(v);
+        o[k] = String(v === null || v === undefined ? '' : v).trim();
+      });
+      return o;
+    });
+  }
+  function showImportPreview(wb, box){
+    clear(box);
+    var names = wb.SheetNames;
+    var vSheet = names.find(function(n){ return normName(n).indexOf('عجلات') >= 0; });
+    var dSheet = names.find(function(n){ return normName(n).indexOf('سائق') >= 0; });
+    if(!vSheet && !dSheet){
+      var first = wb.Sheets[names[0]], hdr = (XLSX.utils.sheet_to_json(first, {header:1})[0] || []).map(normName);
+      if(hdr.indexOf(normName('رقم اللوحة')) >= 0) vSheet = names[0]; else dSheet = names[0];
+    }
+    var drivers = dSheet ? parseImportSheet(wb.Sheets[dSheet], 'drivers') : [];
+    var vehicles = vSheet ? parseImportSheet(wb.Sheets[vSheet], 'vehicles') : [];
+    var seenD = {}, seenV = {};
+    S.drivers.forEach(function(d){ seenD[normName(d.name)] = 1; });
+    S.vehicles.forEach(function(v){ seenV[normName(v.plate)+'|'+normName(v.province)] = 1; });
+    drivers.forEach(function(d){
+      if(!d.name) d._err = 'الاسم فارغ';
+      else if(seenD[normName(d.name)]) d._skip = 'موجود مسبقاً';
+      else seenD[normName(d.name)] = 1;
+    });
+    vehicles.forEach(function(v){
+      v.province = v.province || 'كربلاء';
+      var ft = normName(v.fuelType);
+      v.fuelType = ft === normName('كاز') || ft === 'diesel' || ft === normName('ديزل') ? 'diesel' : 'petrol';
+      var key = normName(v.plate)+'|'+normName(v.province);
+      if(!v.plate) v._err = 'رقم اللوحة فارغ';
+      else if(!v.make) v._err = 'النوع فارغ';
+      else if(seenV[key]) v._skip = 'موجودة مسبقاً';
+      else seenV[key] = 1;
+      if(!v._err && v.defaultDriver && !seenD[normName(v.defaultDriver)]) v._warn = 'السائق "'+v.defaultDriver+'" غير موجود — سيُترك فارغاً';
+    });
+    function statusOf(x){ return x._err ? '✕ '+x._err : x._skip ? '— تُتجاوز: '+x._skip : x._warn ? '⚠ '+x._warn : '✓ جديد'; }
+    var okD = drivers.filter(function(d){ return !d._err && !d._skip; }), okV = vehicles.filter(function(v){ return !v._err && !v._skip; });
+    box.appendChild(el('p',{class:'muted', text:'السائقون: '+okD.length+' جديد من '+drivers.length+' · العجلات: '+okV.length+' جديدة من '+vehicles.length}));
+    if(drivers.length) box.appendChild(tableNode(['الحالة','الاسم','الهاتف','انتهاء الإجازة'], drivers.map(function(d){ return [statusOf(d), d.name, d.phone, d.licenseExpiry]; }), {rowClass:function(i){ return drivers[i]._err ? 'row-error' : drivers[i]._skip || drivers[i]._warn ? 'row-warn' : ''; }}));
+    if(vehicles.length) box.appendChild(tableNode(['الحالة','اللوحة','المحافظة','النوع','الموديل','الوقود','السائق'], vehicles.map(function(v){ return [statusOf(v), v.plate, v.province, v.make, v.model, FUEL_LABEL[v.fuelType], v.defaultDriver]; }), {rowClass:function(i){ return vehicles[i]._err ? 'row-error' : vehicles[i]._skip || vehicles[i]._warn ? 'row-warn' : ''; }}));
+    if(okD.length || okV.length) box.appendChild(el('div',{class:'row', style:{marginTop:'10px'}},[el('button',{class:'btn btn-primary', type:'button', id:'commitImportBtn', text:'استيراد '+(okD.length+okV.length)+' سجلاً', onclick:function(e){
+      e.target.disabled = true;
+      commitImport(okD, okV).then(function(){ clear(box); showToast('تم الاستيراد: '+okD.length+' سائق و'+okV.length+' عجلة'); })
+        .catch(function(err){ e.target.disabled = false; showToast('تعذّر الاستيراد: '+errMsg(err)); });
+    }})]));
+  }
+  function commitImport(drivers, vehicles){
+    var nameToId = {};
+    S.drivers.forEach(function(d){ nameToId[normName(d.name)] = d.id; });
+    var ops = [];
+    drivers.forEach(function(d){
+      var ref = db.collection('drivers').doc();
+      nameToId[normName(d.name)] = ref.id;
+      ops.push([ref, stamp({name:d.name, phone:d.phone, licenseNo:d.licenseNo, licenseExpiry:d.licenseExpiry, notes:d.notes, active:true, imported:true})]);
+    });
+    vehicles.forEach(function(v){
+      ops.push([db.collection('vehicles').doc(), stamp({plate:v.plate, province:v.province, make:v.make, model:v.model, year:v.year ? Number(v.year) || v.year : '', color:v.color, chassis:v.chassis,
+        fuelType:v.fuelType, odometer:num(v.odometer), registrationExpiry:v.registrationExpiry, insuranceExpiry:v.insuranceExpiry, department:v.department,
+        defaultDriverId:nameToId[normName(v.defaultDriver)] || '', notes:v.notes, status:'active', imported:true})]);
+    });
+    audit('import.excel', 'vehicles', '', drivers.length+' سائق، '+vehicles.length+' عجلة');
+    return writeInBatches(ops.map(function(o){ return {type:'set', ref:o[0], data:o[1]}; }));
+  }
+  function writeInBatches(ops){
+    var chunks = [];
+    for(var i=0; i<ops.length; i+=400) chunks.push(ops.slice(i, i+400));
+    return chunks.reduce(function(p, chunk){
+      return p.then(function(){
+        var b = db.batch();
+        chunk.forEach(function(o){ if(o.type === 'delete') b['delete'](o.ref); else b.set(o.ref, o.data); });
+        var c = b.commit();
+        return navigator.onLine ? c : null;
+      });
+    }, Promise.resolve());
+  }
+
+  /* ====================================================================
+     البيانات التجريبية (demo:true)
+     ==================================================================== */
+  var DEMO_USERS = [
+    {username:'admin', name:'مشتاق كريم', role:'admin'},
+    {username:'fleet', name:'مدير الآليات (تجريبي)', role:'fleet'},
+    {username:'gate', name:'موظف الاستعلامات (تجريبي)', role:'gate', locations:['gate-main']},
+    {username:'finance', name:'موظف المالية (تجريبي)', role:'finance'},
+    {username:'driver', name:'علي حسين', role:'driver', driverKey:0},
+    {username:'viewer', name:'الإدارة العليا (تجريبي)', role:'viewer'}
+  ];
+  function buildDemoData(){
+    var seed = 20260923;
+    function rnd(){ seed = (seed*1103515245 + 12345) % 2147483648; return seed/2147483648; }
+    function ri(a,b){ return a + Math.floor(rnd()*(b-a+1)); }
+    function pick(a){ return a[Math.floor(rnd()*a.length)]; }
+    function who(x){ return S.authUser ? S.authUser.uid : x; }
+    var stamp0 = {demo:true, createdBy:S.authUser ? S.authUser.uid : 'u_admin', createdByName:S.profile ? S.profile.name : 'مشتاق كريم'};
+    var names = ['علي حسين','حيدر كاظم','محمد جاسم','عباس فاضل','أحمد ستار','حسن عبد الأمير'];
+    var drivers = names.map(function(n, i){
+      var exp = new Date(); exp.setDate(exp.getDate() + (i === 3 ? 20 : 400 + i*60));
+      return Object.assign({id:'demo-drv-'+i, name:n, phone:'0780'+(1000000+i*123457).toString().slice(0,7), licenseNo:String(300100+i*17), licenseExpiry:fmtISODate(exp), active:true, createdAt:nowISO()}, stamp0);
+    });
+    var specs = [
+      ['45821 ب','تويوتا','لاندكروزر',2021,'أبيض','diesel','رئاسة الجامعة',0,7.5],
+      ['31277 أ','تويوتا','هايلوكس',2019,'فضي','diesel','الخدمات',1,9],
+      ['18830 ج','هيونداي','سوناتا',2022,'أسود','petrol','الشؤون الإدارية',2,11],
+      ['52194 ب','كيا','سيراتو',2020,'أبيض','petrol','كلية الطب',3,12.5],
+      ['60412 د','تويوتا','كوستر',2018,'أبيض','diesel','نقل الطلبة',4,5.5],
+      ['27705 أ','نيسان','صني',2019,'رصاصي','petrol','كلية التمريض',5,13],
+      ['44159 هـ','ميتسوبيشي','باجيرو',2017,'أبيض','petrol','الشؤون القانونية',0,7],
+      ['39926 ب','هيونداي','H1',2020,'فضي','diesel','الخدمات',1,8.5]
+    ];
+    var now = Date.now(), DAY = 86400000;
+    var vehicles = [], movements = [], requests = [], points = [];
+    specs.forEach(function(s, i){
+      var id = 'demo-veh-'+i;
+      var reg = new Date(); reg.setDate(reg.getDate() + (i === 2 ? 12 : i === 5 ? -5 : 90 + i*37));
+      var ins = new Date(); ins.setDate(ins.getDate() + (i === 6 ? 25 : 150 + i*21));
+      var odo = 40000 + i*13750;
+      vehicles.push(Object.assign({id:id, plate:s[0], province:'كربلاء', make:s[1], model:s[2], year:s[3], color:s[4], chassis:'JT'+(700000+i*4311), fuelType:s[5],
+        odometer:odo, lastOilChangeKm:odo - (i === 1 ? 5600 : 1500), registrationExpiry:fmtISODate(reg), insuranceExpiry:fmtISODate(ins),
+        status:i === 4 ? 'maintenance' : 'active', department:s[6], defaultDriverId:'demo-drv-'+s[7], notes:'', createdAt:new Date(now - 40*DAY).toISOString()}, stamp0));
+      // رحلات آخر 24 يوماً
+      var t = now - 24*DAY, kmpl = s[8], sinceFuel = 0, lastDir = 'in', lastAt = 0;
+      var purposes = ['مهمة رسمية — بغداد','نقل موظفين','مراجعة دائرة المرور','إيصال بريد رسمي','مهمة داخل كربلاء','استقبال وفد','شراء مستلزمات'];
+      while(t < now - 6*3600000){
+        var day = new Date(t); day.setHours(ri(7,11), ri(0,59), 0, 0);
+        if(day.getTime() > now - 6*3600000) break;
+        if(i === 4 && day.getTime() > now - 4*DAY) break; // الكوستر في الصيانة
+        if(i === 6 && day.getTime() > now - 2*DAY) break; // الباجيرو: تُسجَّل لاحقاً متأخرة عن الإرجاع
+        if(day.getDay() !== 5 && rnd() < 0.8){
+          var drvIdx = rnd() < 0.75 ? s[7] : ri(0,5);
+          var outAt = day.getTime(), dur = (rnd() < 0.07 ? ri(13,20) : ri(1,7))*3600000 + ri(0,59)*60000;
+          var km = ri(15, dur > 5*3600000 ? 260 : 90);
+          var loc = pick(['gate-main','gate-main','gate-back']);
+          movements.push(Object.assign({id:'demo-mov-'+i+'-'+outAt, vehicleId:id, direction:'out', driverId:'demo-drv-'+drvIdx, driverName:names[drvIdx], locationId:loc, at:new Date(outAt).toISOString(), odometer:odo, purpose:pick(purposes), note:'', by:who('u_gate'), byName:'موظف الاستعلامات (تجريبي)'}, stamp0));
+          odo += km; sinceFuel += km;
+          var inAt = outAt + dur;
+          if(inAt > now - 10*60000){ lastDir = 'out'; break; } // ما زالت خارج الجامعة
+          lastDir = 'in'; lastAt = inAt;
+          movements.push(Object.assign({id:'demo-mov-'+i+'-'+inAt, vehicleId:id, direction:'in', driverId:'demo-drv-'+drvIdx, driverName:names[drvIdx], locationId:'garage', at:new Date(inAt).toISOString(), odometer:odo, purpose:'', note:'', by:who('u_gate'), byName:'موظف الاستعلامات (تجريبي)'}, stamp0));
+          if(sinceFuel > 250){
+            var liters = Math.round(sinceFuel / (kmpl * (rnd() < 0.1 ? 0.6 : 0.9 + rnd()*0.2)));
+            var price = s[5] === 'diesel' ? 500 : 650;
+            var fAt = new Date(inAt + 20*60000).toISOString();
+            var age = now - (inAt + 20*60000);
+            var st = age > 5*DAY ? 'done' : age > 2*DAY ? (rnd() < 0.5 ? 'done' : 'awaiting_finance') : (rnd() < 0.5 ? 'new' : 'awaiting_finance');
+            var hist = [{status:'new', at:fAt, by:'u_driver', byName:names[drvIdx], note:''}];
+            if(st !== 'new') hist.push({status:'awaiting_finance', at:new Date(inAt + 3*3600000).toISOString(), by:'u_fleet', byName:'مدير الآليات (تجريبي)', note:'موافقة مدير الآليات'});
+            if(st === 'done') hist.push({status:'done', at:new Date(inAt + DAY).toISOString(), by:'u_finance', byName:'موظف المالية (تجريبي)', note:'تأييد المالية'});
+            requests.push(Object.assign({id:'demo-req-f-'+i+'-'+inAt, type:'fuel', vehicleId:id, driverId:'demo-drv-'+drvIdx, driverName:names[drvIdx], status:st, history:hist,
+              fuelType:s[5], liters:liters, amount:liters*price, odometer:odo, station:pick(['محطة الحسين','محطة العباس','محطة طريق بغداد']), payMethod:pick(['cash','coupon','account']),
+              createdAt:fAt, doneAt:st === 'done' ? hist[2].at : undefined, financeApprovedAmount:st === 'done' ? liters*price : undefined, financeBy:st === 'done' ? 'موظف المالية (تجريبي)' : undefined}, stamp0));
+            sinceFuel = 0;
+          }
+        }
+        t += DAY;
+      }
+      // حالات عرض: عجلتان خارج الجامعة الآن، وعجلة متأخرة عن الإرجاع (خرجت قبل 15 ساعة)
+      var forceOut = {0:3, 3:5, 6:15}[i];
+      if(forceOut && lastDir === 'in' && lastAt < now - forceOut*3600000){
+        var fo = now - forceOut*3600000;
+        movements.push(Object.assign({id:'demo-mov-'+i+'-'+fo, vehicleId:id, direction:'out', driverId:'demo-drv-'+s[7], driverName:names[s[7]], locationId:'gate-main', at:new Date(fo).toISOString(), odometer:odo, purpose:pick(purposes), note:'', by:who('u_gate'), byName:'موظف الاستعلامات (تجريبي)'}, stamp0));
+      }
+    });
+    // صيانة
+    function req(id, type, vi, st, daysAgo, extra, histNotes){
+      var at = new Date(now - daysAgo*DAY).toISOString(), v = specs[vi];
+      var h = [{status:'new', at:at, by:'u_fleet', byName:'مدير الآليات (تجريبي)', note:''}];
+      (histNotes || []).forEach(function(x, k){ h.push({status:x[0], at:new Date(now - (daysAgo - k*0.5 - 0.3)*DAY).toISOString(), by:x[1], byName:x[2], note:x[3] || ''}); });
+      var r = Object.assign({id:id, type:type, vehicleId:'demo-veh-'+vi, driverId:'demo-drv-'+v[7], driverName:names[v[7]], status:st, history:h, createdAt:at}, stamp0, extra);
+      if(st === 'done'){ r.doneAt = h[h.length-1].at; r.financeBy = 'موظف المالية (تجريبي)'; }
+      requests.push(r);
+    }
+    var F = ['u_fleet','مدير الآليات (تجريبي)'], FI = ['u_finance','موظف المالية (تجريبي)'];
+    req('demo-req-m-1','maintenance',4,'in_progress',4,{description:'صوت في ناقل الحركة وتسريب زيت', workshop:'ورشة الأمين', estCost:450000, odometer:95100},[['approved',F[0],F[1]],['in_progress',F[0],F[1]]]);
+    req('demo-req-m-2','maintenance',1,'new',1,{description:'تبديل دهن وفلاتر — تجاوزت موعد التبديل', estCost:85000},[]);
+    req('demo-req-m-3','maintenance',2,'done',18,{description:'تبديل بطارية', workshop:'مركز الكهرباء', estCost:120000, actualCost:115000},[['approved',F[0],F[1]],['in_progress',F[0],F[1]],['awaiting_finance',F[0],F[1]],['done',FI[0],FI[1],'تأييد المالية']]);
+    req('demo-req-m-4','maintenance',5,'awaiting_finance',6,{description:'تصليح مكيف الهواء', workshop:'ورشة التبريد', estCost:200000, actualCost:175000},[['approved',F[0],F[1]],['in_progress',F[0],F[1]],['awaiting_finance',F[0],F[1]]]);
+    req('demo-req-m-5','maintenance',6,'rejected',9,{description:'طلاء الباب الخلفي', estCost:300000, rejectReason:'ليس ضمن الأولويات هذا الشهر', rejectedBy:F[1]},[['rejected',F[0],F[1],'ليس ضمن الأولويات هذا الشهر']]);
+    req('demo-req-m-6','maintenance',0,'done',12,{description:'تبديل إطارات أمامية', workshop:'إطارات الفرات', estCost:600000, actualCost:640000},[['approved',F[0],F[1]],['in_progress',F[0],F[1]],['awaiting_finance',F[0],F[1]],['done',FI[0],FI[1],'تأييد المالية']]);
+    req('demo-req-w-1','wash',0,'done',3,{kind:'both', place:'مغسل الجامعة', cost:0},[['done',F[0],F[1],'أُنجز الغسل']]);
+    req('demo-req-w-2','wash',3,'new',0.3,{kind:'wash', place:''},[]);
+    req('demo-req-w-3','wash',7,'awaiting_finance',2,{kind:'clean', place:'مغسل الفرات', cost:15000},[['awaiting_finance',F[0],F[1],'أُنجز الغسل — بانتظار المالية']]);
+    req('demo-req-w-4','wash',2,'done',10,{kind:'both', place:'مغسل الفرات', cost:20000},[['awaiting_finance',F[0],F[1]],['done',FI[0],FI[1],'تأييد المالية']]);
+    var mk = monthKey(new Date());
+    points.push(Object.assign({id:'demo-pts-1', driverId:'demo-drv-1', month:mk, kind:'manual', delta:-10, category:'violation', reason:'مخالفة سرعة (تجريبي)', by:who('u_fleet'), byName:F[1], at:new Date(now - 5*DAY).toISOString()}, stamp0));
+    points.push(Object.assign({id:'demo-pts-2', driverId:'demo-drv-2', month:mk, kind:'manual', delta:5, category:'excellence', reason:'التزام متميز بالمواعيد (تجريبي)', by:who('u_fleet'), byName:F[1], at:new Date(now - 3*DAY).toISOString()}, stamp0));
+    [5,3,4,4,5,3].forEach(function(n, i){ points.push(Object.assign({id:'demo-stars-'+i, driverId:'demo-drv-'+i, month:mk, kind:'stars', stars:n, reason:'', by:who('u_fleet'), byName:F[1], at:new Date(now - DAY).toISOString()}, stamp0)); });
+    requests.forEach(function(r){ Object.keys(r).forEach(function(k){ if(r[k] === undefined) delete r[k]; }); });
+    return {drivers:drivers, vehicles:vehicles, movements:movements, requests:requests, driverPoints:points};
+  }
+  function demoOps(){
+    var data = buildDemoData(), ops = [];
+    Object.keys(data).forEach(function(col){ data[col].forEach(function(d){ var id = d.id; var copy = Object.assign({}, d); delete copy.id; ops.push({type:'set', ref:db.collection(col).doc(id), data:copy}); }); });
+    return ops;
+  }
+  function seedDemoMode(){
+    var b = db.batch();
+    b.set(configDoc(), {locations:DEFAULT_LOCATIONS, settings:DEFAULT_SETTINGS, createdAt:nowISO(), demo:true});
+    DEMO_USERS.forEach(function(u){
+      var id = 'u_'+u.username;
+      FB._setAuthUser(usernameToEmail(u.username), id, 'demo1234');
+      b.set(db.collection('users').doc(id), {username:u.username, name:u.name, role:u.role, locations:u.locations || [], driverId:u.driverKey !== undefined ? 'demo-drv-'+u.driverKey : '', active:true, createdAt:nowISO(), demo:true});
+    });
+    b.commit();
+    writeInBatches(demoOps());
+  }
+  function addDemoData(){
+    var ops = demoOps();
+    audit('demo.add', '', '', ops.length+' مستند');
+    commit(writeInBatches(ops), 'أُضيفت '+ops.length+' مستند تجريبي');
+  }
+  function deleteDemoData(){
+    var ops = [];
+    [['vehicles','vehicles'],['drivers','drivers'],['movements','movements'],['requests','requests'],['driverPoints','points']].forEach(function(p){
+      S[p[1]].forEach(function(d){ if(d.demo === true) ops.push({type:'delete', ref:db.collection(p[0]).doc(d.id)}); });
+    });
+    if(!ops.length){ showToast('لا توجد بيانات تجريبية'); return; }
+    confirmModal('حذف البيانات التجريبية', 'سيُحذف '+ops.length+' مستنداً معلَّماً بـ demo:true (عجلات، سائقون، حركات، طلبات، نقاط). البيانات الحقيقية لا تُمسّ. لا يمكن التراجع.', 'حذف '+ops.length+' مستند', function(){
+      audit('demo.delete', '', '', ops.length+' مستند');
+      commit(writeInBatches(ops), 'حُذفت البيانات التجريبية');
+    }, true);
+  }
+
+  window.__ameedVehicles = {S:S, derived:function(){ return derived; }, DEMO:DEMO};
+  init();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "نظام العميد الإلكتروني لمتابعة العجلات",
+  "short_name": "عجلات العميد",
+  "description": "متابعة عجلات جامعة العميد: الحركة، الوقود، الصيانة، الغسل، وتقييم السائقين.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6F3EC",
+  "theme_color": "#0B5D4C",
+  "icons": [
+    { "src": "assets/logo-light.png", "sizes": "any", "type": "image/png", "purpose": "any" }
+  ]
+}
