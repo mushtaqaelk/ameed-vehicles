@@ -85,7 +85,7 @@ async function submitModal(page) {
   page.on('dialog', (d) => d.accept());
 
   console.log('\n[1] شاشة الدخول والوضع التجريبي');
-  await page.goto(base);
+  await page.goto(base + '?demo=1');
   await page.waitForSelector('[data-demo-user="admin"]');
   check(await page.isVisible('#demoBanner'), 'شريط الوضع التجريبي ظاهر');
   check(await page.$eval('html', (h) => h.dir) === 'rtl', 'الاتجاه من اليمين لليسار');
@@ -375,7 +375,7 @@ async function submitModal(page) {
   await dctx.route(/gstatic\.com\/firebasejs/, (r) => r.abort());
   const dp = await dctx.newPage();
   dp.on('pageerror', (e) => errors.push(e.message));
-  await dp.goto(base);
+  await dp.goto(base + '?demo=1');
   await login(dp, 'admin');
   await dp.screenshot({ path: path.join(SHOTS, '11-home-admin-desktop-dark.png'), fullPage: true });
   const bg = await dp.$eval('body', (b) => getComputedStyle(b).backgroundColor);
