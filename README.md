@@ -74,3 +74,6 @@ node tests/smoke.test.js          # Playwright + Chromium على قاعدة ال
 # إن لم يتوفر الوصول إلى cdnjs: XLSX_PATH=/path/to/xlsx.full.min.js node tests/smoke.test.js
 ```
 يغطي الاختبار كل الأدوار ودورات الطلبات والنقاط والتقارير ووضع الطباعة والاستيراد، ويحفظ لقطات الهاتف (375px) والطباعة في `tests/screenshots/`.
+
+## لمتابعة التطوير
+اقرأ [`CLAUDE.md`](CLAUDE.md): حالة المشروع، وخريطة الكود، وقواعد العمل، والمهام المعلّقة. الموجز الأصلي في مجلد [`docs/`](docs/).
