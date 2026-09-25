@@ -95,9 +95,10 @@ async function submitModal(page) {
   const expected = {
     admin: ['home', 'gate', 'requests', 'vehicles', 'drivers', 'finance', 'reports', 'admin'],
     fleet: ['home', 'gate', 'requests', 'vehicles', 'drivers', 'reports'],
+    supervisor: ['home', 'drivers'],
     gate: ['home', 'gate'],
     finance: ['home', 'requests', 'finance', 'reports'],
-    driver: ['home', 'requests'],
+    driver: ['home', 'requests', 'me'],
     viewer: ['home', 'vehicles', 'drivers', 'finance', 'reports'],
   };
   for (const [role, tabs] of Object.entries(expected)) {
@@ -120,6 +121,8 @@ async function submitModal(page) {
   check(/تبديل الدهن/.test(alertText), 'تنبيه تبديل الدهن');
   check(/خارج الجامعة منذ/.test(alertText), 'تنبيه تأخر الإرجاع');
   check(!/[٠-٩]/.test(alertText), 'لا أرقام هندية (٠-٩) في الواجهة');
+  check(!/التأمين/.test(alertText), 'لا تنبيهات للتأمين');
+  check(/طلب مساعدة/.test(alertText) && /طلب تأخير/.test(alertText), 'تنبيهات طلب المساعدة وطلب التأخير');
 
   console.log('\n[4] الاستعلامات: تسجيل خروج ودخول في موقعه فقط');
   await login(page, 'gate');
@@ -174,8 +177,40 @@ async function submitModal(page) {
   check(myReq && myReq.status === 'new' && myReq.driverId === 'demo-drv-0', 'طلب الوقود أُنشئ بحالة "جديد" باسم السائق');
   check(myReq && !!myReq.receiptId, 'صورة الوصل محفوظة كمرفق');
   await page.click('[data-new-request="maintenance"]');
-  await fillModal(page, { description: 'اختبار صيانة — صوت في المكابح', estCost: 100000 });
+  const wsOpts = await page.$$eval('.modal [name="workshopType"] option', (o) => o.map((x) => x.textContent));
+  check(JSON.stringify(wsOpts) === '["كراج العتبة","خارجي"]', 'خيارا الورشة: ' + wsOpts.join('، '));
+  check(!(await page.isVisible('.modal [name="workshopExternal"]')), 'حقل المكان الخارجي مخفي افتراضياً');
+  await page.selectOption('.modal [name="workshopType"]', 'external');
+  check(await page.isVisible('.modal [name="workshopExternal"]'), 'حقل المكان الخارجي يظهر عند اختيار "خارجي"');
+  await fillModal(page, { description: 'اختبار صيانة — صوت في المكابح', estCost: 100000, workshopExternal: 'ورشة الاختبار' });
   await submitModal(page);
+  const ws = await page.evaluate(() => window.__ameedVehicles.S.requests.find((r) => r.description === 'اختبار صيانة — صوت في المكابح').workshop);
+  check(ws === 'خارجي — ورشة الاختبار', 'حُفظت الورشة: ' + ws);
+  await page.click('[data-new-request="wash"]');
+  const wpOpts = await page.$$eval('.modal [name="place"] option', (o) => o.map((x) => x.textContent));
+  check(JSON.stringify(wpOpts) === '["كراج العتبة","خارجي"]', 'خيارا مكان الغسل: ' + wpOpts.join('، '));
+  await page.click('.modal-head button');
+
+  console.log('\n[5ب] السائق: ملفي وطلبا التأخير والمساعدة');
+  await goTab(page, 'me');
+  check(/علي حسين/.test(await page.textContent('#panel-me')), 'ملف السائق يعرض اسمه');
+  await page.click('#editMyProfileBtn');
+  check(!(await page.$('.modal [name="name"]')), 'السائق لا يستطيع تعديل اسمه');
+  await fillModal(page, { phone: '07709999999', address: 'كربلاء — حي الاختبار' });
+  await page.setInputFiles('.modal [name="photo"]', { name: 'me.png', mimeType: 'image/png', buffer: png });
+  await submitModal(page);
+  await page.waitForTimeout(300);
+  const meD = await page.evaluate(() => window.__ameedVehicles.S.drivers.find((d) => d.id === 'demo-drv-0'));
+  check(meD.phone === '07709999999' && meD.address === 'كربلاء — حي الاختبار' && !!meD.photoId && meD.name === 'علي حسين', 'حُفظ الهاتف والعنوان والصورة');
+  await page.click('#meDelayBtn');
+  await fillModal(page, { reason: 'اختبار — عطل مروري' });
+  await submitModal(page);
+  await page.click('#meAssistBtn');
+  await fillModal(page, { description: 'اختبار — بنچر', location: 'طريق الاختبار' });
+  await submitModal(page);
+  const alertsMine = await page.evaluate(() => window.__ameedVehicles.S.requests.filter((r) => r.driverId === 'demo-drv-0' && /اختبار/.test(r.reason || r.description || '') && (r.type === 'delay' || r.type === 'assist')).map((r) => r.type).sort());
+  check(JSON.stringify(alertsMine) === '["assist","delay"]', 'أُرسل طلب التأخير وطلب المساعدة');
+  await page.screenshot({ path: path.join(SHOTS, '04b-driver-me-mobile.png'), fullPage: true });
   await page.screenshot({ path: path.join(SHOTS, '04-driver-home-mobile.png'), fullPage: true });
 
   console.log('\n[6] مدير الآليات: الموافقة ودورة الصيانة');
@@ -205,22 +240,78 @@ async function submitModal(page) {
   await submitModal(page);
   st = await page.evaluate((id) => window.__ameedVehicles.S.requests.find((r) => r.id === id), washNew.id);
   check(st.status === 'rejected' && st.rejectReason === 'اختبار الرفض', 'الرفض مع السبب');
+  // الموافقة على طلب التأخير: لا تُعدّ العجلة متأخرة قبل الوقت المعتمد
+  await page.click('[data-request="demo-req-d-1"] [data-action="approve"]');
+  await page.waitForTimeout(200);
+  const dl = await page.evaluate(() => window.__ameedVehicles.derived().live['demo-veh-3'].delayUntil);
+  check(!!dl, 'طلب التأخير المعتمد يظهر على العجلة');
+  await page.click('[data-request="demo-req-a-1"] [data-action="complete"]');
+  await fillModal(page, { note: 'أُصلحت البطارية' });
+  await submitModal(page);
+  st = await page.evaluate(() => window.__ameedVehicles.S.requests.find((r) => r.id === 'demo-req-a-1').status);
+  check(st === 'done', 'أُغلق طلب المساعدة');
   await page.screenshot({ path: path.join(SHOTS, '05-requests-fleet-mobile.png'), fullPage: true });
 
   console.log('\n[7] مدير الآليات: النقاط والتقييم');
   await goTab(page, 'drivers');
-  const before = await page.evaluate(() => window.__ameedVehicles.S.points.length);
+  const score = () => page.evaluate(() => {
+    const y = String(new Date().getFullYear());
+    return window.__ameedVehicles.S.points.filter((p) => p.driverId === 'demo-drv-0' && p.kind === 'manual' && String(p.year || p.at).slice(0, 4) === y).reduce((a, p) => a + p.delta, 0);
+  });
+  const s0 = await score();
+  check(s0 === 15, 'الرصيد السنوي = مجموع النقاط المضافة فقط (يبدأ من صفر): ' + s0);
   await page.click('[data-points="demo-drv-0"]');
-  await fillModal(page, { delta: -7, reason: 'اختبار خصم يدوي' });
+  await page.selectOption('.modal [name="category"]', 'penalty');
+  await page.click('.modal [data-step="1"]');
+  await page.click('.modal [data-step="1"]');
+  check((await page.inputValue('.modal [name="points"]')) === '7', 'العدّاد يزيد بالأزرار');
+  await page.fill('.modal [name="reason"]', 'اختبار عقوبة');
   await submitModal(page);
+  check((await score()) === 8, 'العقوبة خصمت 7 نقاط');
   await page.click('[data-stars="demo-drv-0"]');
   await fillModal(page, { stars: '2' });
   await submitModal(page);
-  const after = await page.evaluate(() => window.__ameedVehicles.S.points.length);
-  check(after === before + 2, 'حُفظ الخصم اليدوي والتقييم بالنجوم');
   const ranks = await page.$$eval('[data-driver-rank]', (e) => e.length);
-  check(ranks === 6, `لوحة ترتيب السائقين: ${ranks}`);
+  check(ranks === 6, `قائمة السائقين: ${ranks}`);
+  const firstByPoints = await page.$eval('[data-driver-rank] b', (e) => e.textContent);
+  await page.click('[data-sort="alpha"]');
+  const names = await page.$$eval('[data-driver-rank] b', (e) => e.map((x) => x.textContent));
+  check(JSON.stringify(names) === JSON.stringify([...names].sort((a, b) => a.localeCompare(b, 'ar'))), 'العرض الأبجدي');
+  check(firstByPoints === 'محمد جاسم', 'الأعلى نقاطاً في المقدمة: ' + firstByPoints);
+  await page.fill('#driverSearch', 'عباس');
+  await page.waitForTimeout(100);
+  check((await page.$$eval('[data-driver-rank]', (e) => e.length)) === 1, 'البحث باسم السائق');
+  await page.fill('#driverSearch', '');
+  await page.click('[data-open-driver="demo-drv-0"]');
+  await page.waitForSelector('.modal .profile-head');
+  const prof = await page.textContent('.modal');
+  check(/اختبار عقوبة/.test(prof) && /كربلاء — حي الاختبار/.test(prof), 'ملف السائق: العنوان والعقوبات');
+  check(await page.$eval('.modal .profile-head .avatar img', (i) => i.complete && i.naturalWidth > 0), 'صورة السائق في ملفه');
+  await page.screenshot({ path: path.join(SHOTS, '06b-driver-profile-mobile.png'), fullPage: true });
+  await page.click('.modal [data-full-report="demo-drv-0"]');
+  await page.waitForTimeout(200);
+  const full = await page.textContent('.modal-backdrop:last-child .modal');
+  const y0 = new Date().getFullYear();
+  check(new RegExp(String(y0 - 1)).test(full) && /النقاط حسب السنة/.test(full), 'التقرير الكامل يشمل كل السنوات');
+  await page.click('.modal-backdrop:last-child .modal-head button');
+  await page.click('.modal-head button');
   await page.screenshot({ path: path.join(SHOTS, '06-drivers-mobile.png'), fullPage: true });
+
+  console.log('\n[7ب] مدير القسم: النقاط لسائقي قسمه فقط');
+  await login(page, 'supervisor');
+  await goTab(page, 'drivers');
+  const supRows = await page.$$eval('[data-driver-rank]', (e) => e.map((x) => x.dataset.driver).sort());
+  check(JSON.stringify(supRows) === '["demo-drv-1","demo-drv-3","demo-drv-5"]', 'يعرض سائقي قسمه: ' + supRows);
+  await page.click('#driversMineChip');
+  await page.waitForTimeout(100);
+  check(!(await page.$('[data-points="demo-drv-0"]')) && !!(await page.$('[data-points="demo-drv-1"]')), 'لا يضيف نقاطاً لسائق من خارج قسمه');
+  await page.click('[data-points="demo-drv-1"]');
+  await page.fill('.modal [name="points"]', '12');
+  await page.fill('.modal [name="reason"]', 'اختبار شكر من مدير القسم');
+  await submitModal(page);
+  const sp = await page.evaluate(() => window.__ameedVehicles.S.points.find((p) => p.reason === 'اختبار شكر من مدير القسم'));
+  check(sp && sp.delta === 12 && sp.category === 'thanks' && sp.by === 'u_supervisor', 'مدير القسم أضاف شكراً وتقديراً');
+  await page.screenshot({ path: path.join(SHOTS, '06c-supervisor-mobile.png'), fullPage: true });
 
   console.log('\n[8] المالية: التأييد');
   await login(page, 'finance');
@@ -362,7 +453,7 @@ async function submitModal(page) {
       const d = S.drivers.find((x) => x.name === 'علي حسين');
       return { v: !!v, d: !!d, link: v && d && v.defaultDriverId === d.id, fuel: v && v.fuelType, exp: v && v.registrationExpiry };
     });
-    check(imp.v && imp.d && imp.link, 'استُورد السائق والعجلة وربط السائق الافتراضي');
+    check(imp.v && imp.d && imp.link, 'استُورد السائق والعجلة وربط السائق الافتراضي ' + JSON.stringify(imp));
     check(imp.fuel === 'diesel' && imp.exp === '2027-03-01', 'نوع الوقود والتاريخ صحيحان: ' + imp.fuel + ' ' + imp.exp);
     fs.unlinkSync(tplPath);
   } else {

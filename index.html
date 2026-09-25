@@ -295,6 +295,22 @@ details summary{cursor:pointer; font-size:12.5px; color:var(--ink-soft); font-we
 .kv dt{color:var(--ink-soft); font-weight:700;}
 .kv dd{margin:0;}
 
+/* ---------- drivers ---------- */
+.avatar{
+  flex:none; border-radius:50%; overflow:hidden; background:var(--accent-soft); color:var(--accent-ink);
+  display:inline-flex; align-items:center; justify-content:center; font-weight:900; border:1px solid var(--border);
+}
+.avatar img{width:100%; height:100%; object-fit:cover; display:block;}
+.driver-open{
+  display:flex; align-items:center; gap:10px; background:none; border:none; padding:0; cursor:pointer;
+  color:inherit; font:inherit; text-align:start; min-width:0; flex:1;
+}
+.driver-open:hover b{color:var(--accent-strong); text-decoration:underline;}
+.profile-head{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+.stepper{display:flex; gap:6px; align-items:stretch;}
+.stepper input{text-align:center; font-weight:900; font-size:18px;}
+.stepper-btn{min-width:48px; font-size:20px; padding:0;}
+
 /* ---------- modal / toast ---------- */
 .modal-backdrop{
   position:fixed; inset:0; background:rgba(10,15,14,.45); display:flex; align-items:center;
@@ -376,6 +392,11 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
 .report-sign div{flex:1; text-align:center; border-top:1px dashed var(--border-strong); padding-top:8px;}
 
 @media print{
+  body.print-modal #app{ display:none !important; }
+  body.print-modal .modal-backdrop, body.print-modal .modal{
+    position:static !important; max-height:none !important; overflow:visible !important;
+    background:none !important; box-shadow:none !important; padding:0 !important; animation:none !important;
+  }
   body *{ visibility:hidden; }
   #printableReport, #printableReport *{ visibility:visible; }
   #printableReport{ position:absolute; inset-inline-start:0; top:0; width:100%; border:none !important; box-shadow:none !important; }
@@ -468,12 +489,9 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
 
   var DEFAULT_SETTINGS = {
     overdueHours: 12,       // تنبيه العجلة الخارجة منذ أكثر من X ساعة
-    expiryWarnDays: 30,     // تنبيه قرب انتهاء السنوية والتأمين
+    expiryWarnDays: 30,     // تنبيه قرب انتهاء السنوية
     oilChangeKm: 5000,      // تبديل الدهن كل X كم
-    fuelOverusePct: 25,     // نسبة زيادة الاستهلاك عن معدل العجلة التي تُعدّ مخالفة
-    startPoints: 100,       // رصيد السائق الشهري
-    latePenalty: 5,         // خصم تأخر إرجاع العجلة
-    fuelPenalty: 5          // خصم زيادة استهلاك الوقود
+    fuelOverusePct: 25      // نسبة زيادة الاستهلاك عن معدل العجلة (للعلم فقط)
   };
   var DEFAULT_LOCATIONS = [
     {id:'gate-main', name:'البوابة الرئيسية'},
@@ -481,16 +499,18 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     {id:'garage', name:'مرآب الجامعة'}
   ];
 
-  var ROLES = ['admin','fleet','gate','finance','driver','viewer'];
-  var ROLE_LABEL = {admin:'مدير النظام', fleet:'مدير الآليات', gate:'الاستعلامات', finance:'المالية', driver:'سائق', viewer:'الإدارة العليا'};
-  var REQ_TYPE = {fuel:'وقود', maintenance:'صيانة', wash:'غسل وتنظيف'};
-  var REQ_ICON = {fuel:'⛽', maintenance:'🔧', wash:'🧽'};
+  var ROLES = ['admin','fleet','supervisor','gate','finance','driver','viewer'];
+  var ROLE_LABEL = {admin:'مدير النظام', fleet:'مدير الآليات', supervisor:'مدير القسم', gate:'الاستعلامات', finance:'المالية', driver:'سائق', viewer:'الإدارة العليا'};
+  var REQ_TYPE = {fuel:'وقود', maintenance:'صيانة', wash:'غسل وتنظيف', delay:'طلب تأخير', assist:'طلب مساعدة'};
+  var REQ_ICON = {fuel:'⛽', maintenance:'🔧', wash:'🧽', delay:'⏳', assist:'🆘'};
+  var POINT_CAT = {thanks:'شكر وتقدير', penalty:'عقوبة', other:'نقاط أخرى'};
   var STATUS_LABEL = {'new':'جديد', approved:'موافق عليه', in_progress:'قيد التنفيذ', awaiting_finance:'بانتظار المالية', done:'منجز', rejected:'مرفوض'};
   var OPEN_STATUSES = ['new','approved','in_progress','awaiting_finance'];
   var FUEL_LABEL = {petrol:'بنزين', diesel:'كاز'};
   var PAY_LABEL = {cash:'نقداً مع استرداد', coupon:'كوبونات', account:'حساب لدى المحطة'};
   var VSTATUS_LABEL = {active:'فعّالة', maintenance:'في الصيانة', broken:'عاطلة'};
   var WASH_KIND = {wash:'غسل خارجي', clean:'تنظيف داخلي', both:'غسل وتنظيف'};
+  var GARAGE = 'كراج العتبة';
   var MONTH_AR = ['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
 
   /* ---------------- DOM helpers ---------------- */
@@ -728,14 +748,15 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     var all = {
       admin:['home','gate','requests','vehicles','drivers','finance','reports','admin'],
       fleet:['home','gate','requests','vehicles','drivers','reports'],
+      supervisor:['home','drivers'],
       gate:['home','gate'],
       finance:['home','requests','finance','reports'],
-      driver:['home','requests'],
+      driver:['home','requests','me'],
       viewer:['home','vehicles','drivers','finance','reports']
     };
     return all[role()] || ['home'];
   }
-  var TAB_LABEL = {home:'الرئيسية', gate:'الحركة', requests:'الطلبات', vehicles:'العجلات', drivers:'السائقون', finance:'المالية', reports:'التقارير', admin:'الإدارة'};
+  var TAB_LABEL = {me:'ملفي', home:'الرئيسية', gate:'الحركة', requests:'الطلبات', vehicles:'العجلات', drivers:'السائقون', finance:'المالية', reports:'التقارير', admin:'الإدارة'};
 
   /* هل الطلب ينتظر إجراءً من المستخدم الحالي؟ */
   function awaitsMe(r){
@@ -783,10 +804,19 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       if(open) trips.push(open);
       lastMov[vid] = list[list.length-1];
     });
+    // طلبات التأخير المعتمدة: لا تُعدّ العجلة متأخرة قبل الوقت المعتمد
+    var delays = S.requests.filter(function(r){ return r.type === 'delay' && r.status === 'done' && r.untilAt; });
+    function approvedDelay(vid, outAt, endMs){
+      var o = toDate(outAt).getTime();
+      return delays.filter(function(r){ var c = toDate(r.createdAt).getTime(); return r.vehicleId === vid && c >= o && c <= endMs; })
+        .sort(function(a,b){ return String(b.untilAt).localeCompare(String(a.untilAt)); })[0] || null;
+    }
     trips.forEach(function(t){
       var end = t.inAt ? toDate(t.inAt).getTime() : now;
       t.durationMs = end - toDate(t.outAt).getTime();
-      t.late = t.durationMs > overdueMs;
+      var dl = approvedDelay(t.vehicleId, t.outAt, end);
+      t.delayUntil = dl ? dl.untilAt : null;
+      t.late = t.durationMs > overdueMs && !(dl && end <= toDate(dl.untilAt).getTime());
       t.km = (t.inOdo && t.outOdo && t.inOdo > t.outOdo) ? t.inOdo - t.outOdo : null;
     });
 
@@ -797,7 +827,10 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       var s = {vehicle:v, last:m||null, where:'in', locationId:m ? m.locationId : null, since:m ? m.at : null, driverId:'', driverName:'', purpose:''};
       if(m && m.direction === 'out'){
         s.where = 'out'; s.driverId = m.driverId||''; s.driverName = m.driverName||''; s.purpose = m.purpose||'';
-        s.outMs = now - toDate(m.at).getTime(); s.late = s.outMs > overdueMs;
+        s.outMs = now - toDate(m.at).getTime();
+        var dl = approvedDelay(v.id, m.at, now);
+        s.delayUntil = dl ? dl.untilAt : null;
+        s.late = s.outMs > overdueMs && !(dl && now <= toDate(dl.untilAt).getTime());
       }
       live[v.id] = s;
     });
@@ -838,27 +871,50 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
 
   function currentOdo(vid){ return derived && derived.odo[vid] || 0; }
 
-  /* نقاط السائق لشهر معيّن */
-  function driverScore(driverId, mKey){
-    var st = settings();
-    var manual = S.points.filter(function(p){ return p.driverId === driverId && p.month === mKey && p.kind === 'manual'; });
-    var manualSum = manual.reduce(function(a,p){ return a + num(p.delta); }, 0);
-    var lateTrips = derived.trips.filter(function(t){ return t.driverId === driverId && t.late && monthKey(t.outAt) === mKey; });
-    var overFuel = S.requests.filter(function(r){ return r.type === 'fuel' && r.driverId === driverId && derived.fuelOver[r.id] && monthKey(r.createdAt) === mKey; });
-    var starRecs = S.points.filter(function(p){ return p.driverId === driverId && p.month === mKey && p.kind === 'stars'; })
+  /* نقاط السائق لسنة معيّنة: الرصيد يبدأ من صفر، ويضيف أو يخصم مدير الآليات أو مدير القسم */
+  function pointYear(p){ return String(p.year || p.month || p.at || '').slice(0, 4); }
+  function thisYear(){ return String(new Date().getFullYear()); }
+  function driverScore(driverId, year){
+    year = String(year);
+    var entries = S.points.filter(function(p){ return p.driverId === driverId && p.kind === 'manual' && pointYear(p) === year; })
       .sort(function(a,b){ return String(b.at).localeCompare(String(a.at)); });
-    var trips = derived.trips.filter(function(t){ return t.driverId === driverId && monthKey(t.outAt) === mKey; });
-    var total = st.startPoints + manualSum - lateTrips.length*st.latePenalty - overFuel.length*st.fuelPenalty;
-    return {total:total, manual:manual, manualSum:manualSum, late:lateTrips, overFuel:overFuel, stars:starRecs[0] ? num(starRecs[0].stars) : 0, trips:trips};
+    var starRecs = S.points.filter(function(p){ return p.driverId === driverId && p.kind === 'stars' && pointYear(p) === year; });
+    var starsAvg = starRecs.length ? starRecs.reduce(function(a,p){ return a + num(p.stars); }, 0) / starRecs.length : 0;
+    var inYear = function(v){ return String(toDate(v) ? toDate(v).getFullYear() : '') === year; };
+    var trips = derived.trips.filter(function(t){ return t.driverId === driverId && inYear(t.outAt); });
+    return {
+      total:entries.reduce(function(a,p){ return a + num(p.delta); }, 0),
+      entries:entries,
+      thanks:entries.filter(function(p){ return p.category === 'thanks'; }),
+      penalties:entries.filter(function(p){ return p.category === 'penalty'; }),
+      stars:Math.round(starsAvg), starsAvg:starsAvg, starCount:starRecs.length,
+      trips:trips, late:trips.filter(function(t){ return t.late; }),
+      overFuel:S.requests.filter(function(r){ return r.type === 'fuel' && r.driverId === driverId && derived.fuelOver[r.id] && inYear(r.createdAt); })
+    };
   }
+  function canManagePoints(d){
+    if(isFleet()) return true;
+    return role() === 'supervisor' && !!d && d.supervisorId === S.authUser.uid;
+  }
+  function starsText(n){ n = Math.max(0, Math.min(5, Math.round(n))); return '★'.repeat(n) + '☆'.repeat(5-n); }
 
   /* التنبيهات */
   function computeAlerts(){
     var st = settings(), out = [];
+    if(isFleet()){
+      S.requests.filter(function(r){ return r.type === 'assist' && (r.status === 'new' || r.status === 'in_progress'); }).forEach(function(r){
+        var v = vehicleById(r.vehicleId);
+        out.push({tone:'danger', icon:'🆘', vid:r.vehicleId, text:[el('b',{text:'طلب مساعدة: '}), (v ? v.plate : '')+' — '+driverLabel(r.driverId, r.driverName)+' — '+(r.description || '')+(r.location ? ' ('+r.location+')' : '')+(r.status === 'in_progress' ? ' — جارٍ التعامل' : '')]});
+      });
+      S.requests.filter(function(r){ return r.type === 'delay' && r.status === 'new'; }).forEach(function(r){
+        var v = vehicleById(r.vehicleId);
+        out.push({tone:'info', icon:'⏳', vid:r.vehicleId, text:[el('b',{text:'طلب تأخير: '}), (v ? v.plate : '')+' — '+driverLabel(r.driverId, r.driverName)+' — حتى '+fmtDT(r.untilAt)+(r.reason ? ' — '+r.reason : '')]});
+      });
+    }
     S.vehicles.forEach(function(v){
       var s = derived.live[v.id];
       if(s && s.where === 'out' && s.late) out.push({tone:'danger', icon:'⏰', vid:v.id, text:[el('b',{text:v.plate}),' خارج الجامعة منذ '+fmtDuration(s.outMs)+' مع '+driverLabel(s.driverId, s.driverName)]});
-      [['registrationExpiry','السنوية'],['insuranceExpiry','التأمين']].forEach(function(p){
+      [['registrationExpiry','السنوية']].forEach(function(p){
         var d = daysUntil(v[p[0]]);
         if(d === null) return;
         if(d < 0) out.push({tone:'danger', icon:'📄', vid:v.id, text:[el('b',{text:v.plate}),' انتهت '+p[1]+' منذ '+(-d)+' يوم ('+fmtDate(v[p[0]])+')']});
@@ -947,8 +1003,13 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     };
     opts.fields.forEach(function(f){
       var id = 'f_'+f.key+'_'+uid();
-      var input;
-      if(f.type === 'select'){
+      var input, control = null;
+      if(f.type === 'stepper'){
+        input = el('input',{id:id, name:f.key, type:'number', step:1, inputmode:'numeric', value:String(f.value === undefined ? 0 : f.value)});
+        var stepBtn = function(dlt){ return el('button',{type:'button', class:'btn stepper-btn', 'data-step':String(dlt), 'aria-label':dlt > 0 ? 'زيادة' : 'إنقاص', text:dlt > 0 ? '+' : '−',
+          onclick:function(){ input.value = String(num(input.value) + dlt); input.dispatchEvent(new Event('input')); }}); };
+        control = el('div',{class:'stepper'},[stepBtn(-1), input, stepBtn(1)]);
+      } else if(f.type === 'select'){
         input = el('select',{id:id, name:f.key}, (f.options||[]).map(function(o){
           return el('option',{value:o.value, text:o.label, selected:String(o.value) === String(f.value === undefined ? '' : f.value)});
         }));
@@ -979,7 +1040,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
         ? el('label',{'for':id, style:{display:'flex', gap:'8px', alignItems:'center', fontSize:'14px', color:'var(--ink)'}},[input, f.label])
         : el('label',{'for':id, text:f.label + (f.required ? ' *' : '')});
       var wrap = el('div',{class:'field'+(f.full || f.type === 'textarea' || f.type === 'checks' ? ' full' : '')},
-        f.type === 'toggle' ? [labelNode] : [labelNode, input, f.help ? el('span',{class:'help', text:f.help}) : null]);
+        f.type === 'toggle' ? [labelNode] : [labelNode, control || input, f.help ? el('span',{class:'help', text:f.help}) : null]);
       if(f.hidden) wrap.hidden = true;
       wraps[f.key] = wrap;
       grid.appendChild(wrap);
@@ -1015,7 +1076,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     if(f.type === 'checks') return Array.prototype.slice.call(input.querySelectorAll('input:checked')).map(function(c){ return c.value; });
     if(f.type === 'file') return input.files && input.files[0] || null;
     if(f.type === 'toggle') return !!input.checked;
-    if(f.type === 'number'){ var t = String(input.value).trim(); return t === '' ? null : Number(t); }
+    if(f.type === 'number' || f.type === 'stepper'){ var t = String(input.value).trim(); return t === '' ? null : Number(t); }
     return String(input.value).trim();
   }
   function opt(value, label){ return {value:value, label:label}; }
@@ -1129,6 +1190,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
 
     auth.onAuthStateChanged(function(user){
       S.authUser = user; S.profile = null; S.profileLoaded = false;
+      tabState.driversMine = undefined;
       if(profileUnsub){ profileUnsub(); profileUnsub = null; }
       stopData();
       if(user){
@@ -1375,6 +1437,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       details.push(el('div',{},['مع: ', el('b',{text:driverLabel(s.driverId, s.driverName)})]));
       details.push(el('div',{},['منذ: ', el('b',{class:'num', text:fmtDT(s.since)}), ' (', fmtDuration(s.outMs), ')']));
       if(s.purpose) details.push(el('div',{},['الوجهة: ', s.purpose]));
+      if(s.delayUntil) details.push(el('div',{style:{color:'var(--info)', fontWeight:'700'}},['⏳ تأخير معتمد حتى ', el('span',{class:'num', text:fmtDT(s.delayUntil)})]));
     } else {
       details.push(el('div',{},['الموقع: ', el('b',{text:s.locationId ? locationName(s.locationId) : 'غير محدد'})]));
       if(s.since) details.push(el('div',{},['دخلت: ', el('span',{class:'num', text:fmtDT(s.since)})]));
@@ -1404,23 +1467,20 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     if(!d){
       root.appendChild(el('div',{class:'card'},[el('p',{class:'muted', text:'حسابك غير مرتبط بسجل سائق بعد — راجع مدير الآليات أو مدير النظام.'})]));
     }
-    var mk = monthKey(new Date());
     if(d){
-      var sc = driverScore(did, mk);
+      var sc = driverScore(did, thisYear());
       root.appendChild(el('div',{class:'stat-grid'},[
-        statTile(fmtNum(sc.total), 'نقاطي هذا الشهر', sc.total >= 90 ? 'free' : sc.total >= 70 ? 'pending' : 'busy'),
-        statTile(sc.stars ? '★'.repeat(sc.stars) : '—', 'تقييم الشهر', 'pending'),
-        statTile(sc.trips.length, 'رحلاتي هذا الشهر', 'info'),
-        statTile(sc.late.length, 'تأخر في الإرجاع', 'busy')
+        statTile(fmtNum(sc.total), 'نقاطي لسنة '+thisYear(), sc.total > 0 ? 'free' : sc.total < 0 ? 'busy' : 'info', function(){ goTab('me'); }),
+        statTile(sc.stars ? starsText(sc.stars) : '—', 'تقييمي', 'pending', function(){ goTab('me'); }),
+        statTile(sc.thanks.length, 'شكر وتقدير', 'free', function(){ goTab('me'); }),
+        statTile(sc.trips.length, 'رحلاتي هذه السنة', 'info')
       ]));
       var mine = S.vehicles.map(function(v){ return derived.live[v.id]; }).filter(function(s){ return s.where === 'out' && s.driverId === did; });
       if(mine.length) root.appendChild(el('div',{class:'card'},[el('h2',{text:'العجلة التي بعهدتي الآن'}), el('div',{class:'grid-cards'}, mine.map(liveCard))]));
     }
     root.appendChild(el('div',{class:'card'},[
       el('h2',{text:'طلب جديد'}),
-      el('div',{class:'grid-cards', style:{gridTemplateColumns:'repeat(3,1fr)'}}, ['fuel','maintenance','wash'].map(function(t){
-        return el('button',{class:'btn btn-lg', type:'button', 'data-new-request':t, onclick:function(){ openRequestForm(t); }},[REQ_ICON[t]+' '+REQ_TYPE[t]]);
-      }))
+      newRequestButtons()
     ]));
     var open = visibleRequests().filter(function(r){ return OPEN_STATUSES.indexOf(r.status) >= 0; });
     root.appendChild(el('div',{class:'card'},[el('h2',{text:'طلباتي غير المنجزة ('+open.length+')'}),
@@ -1432,6 +1492,13 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
           return [vehicleLabel(vehicleById(t.vehicleId)), fmtDT(t.outAt), t.inAt ? fmtDT(t.inAt) : 'لم تعد بعد', fmtDuration(t.durationMs) + (t.late ? ' ⚠' : ''), t.purpose || '—'];
         })) : emptyNote('لا توجد رحلات مسجّلة.')]));
     }
+  }
+  /* أزرار الطلب الجديد: السائق يملك أيضاً طلب التأخير وطلب المساعدة */
+  function newRequestButtons(){
+    var types = role() === 'driver' ? ['fuel','maintenance','wash','delay','assist'] : ['fuel','maintenance','wash'];
+    return el('div',{class:'grid-cards', style:{gridTemplateColumns:'repeat(auto-fit,minmax(104px,1fr))'}}, types.map(function(t){
+      return el('button',{class:'btn btn-lg'+(t === 'assist' ? ' btn-danger' : ''), type:'button', 'data-new-request':t, onclick:function(){ t === 'delay' || t === 'assist' ? openDriverAlertForm(t) : openRequestForm(t); }},[REQ_ICON[t]+' '+REQ_TYPE[t]]);
+    }));
   }
   function byCreatedDesc(a,b){ return String(b.createdAt).localeCompare(String(a.createdAt)); }
   function tableNode(headers, rows, opts){
@@ -1551,9 +1618,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       if(canCreateRequest()){
         root.appendChild(el('div',{class:'card'},[
           el('h2',{text:'طلب جديد'}),
-          el('div',{class:'grid-cards', style:{gridTemplateColumns:'repeat(3,1fr)'}}, ['fuel','maintenance','wash'].map(function(t){
-            return el('button',{class:'btn btn-lg', type:'button', 'data-new-request':t, onclick:function(){ openRequestForm(t); }},[REQ_ICON[t]+' '+REQ_TYPE[t]]);
-          }))
+          newRequestButtons()
         ]));
       }
       this.filters = el('div',{class:'stack'});
@@ -1613,6 +1678,12 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       if(r.estCost) meta.push(el('span',{},['الكلفة التقديرية: ', el('span',{class:'num', text:fmtIQD(r.estCost)})]));
       if(r.actualCost !== undefined && r.actualCost !== null && r.actualCost !== '') meta.push(el('span',{},['الكلفة الفعلية: ', el('b',{class:'num', text:fmtIQD(r.actualCost)})]));
       if(r.odometer) meta.push(el('span',{},['العداد: ', el('span',{class:'num', text:fmtNum(r.odometer)})]));
+    } else if(r.type === 'delay'){
+      meta.push(el('span',{},['العودة المتوقعة: ', el('b',{class:'num', text:fmtDT(r.untilAt)})]));
+      if(r.reason) meta.push(el('span',{},['السبب: ', r.reason]));
+    } else if(r.type === 'assist'){
+      if(r.location) meta.push(el('span',{},['الموقع: ', el('b',{text:r.location})]));
+      if(r.phone) meta.push(el('span',{},['الهاتف: ', el('a',{href:'tel:'+r.phone, class:'num', text:r.phone})]));
     } else {
       meta.push(el('span',{},['النوع: ', WASH_KIND[r.kind] || '—']));
       if(r.place) meta.push(el('span',{},['المكان: ', r.place]));
@@ -1643,9 +1714,15 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
         if(r.type === 'fuel') b('✓ موافقة وإحالة للمالية', 'btn-ok', function(){ transition(r, 'awaiting_finance', {}, 'موافقة مدير الآليات', 'تمت الموافقة وأُحيل الطلب إلى المالية'); }, 'approve');
         if(r.type === 'maintenance') b('✓ موافقة', 'btn-ok', function(){ transition(r, 'approved', {}, '', 'تمت الموافقة على طلب الصيانة'); }, 'approve');
         if(r.type === 'wash') b('✓ تم الإنجاز', 'btn-ok', function(){ completeWash(r); }, 'complete');
+        if(r.type === 'delay') b('✓ الموافقة على التأخير', 'btn-ok', function(){ transition(r, 'done', {}, 'الموافقة على التأخير حتى '+stripIsolates(fmtDT(r.untilAt)), 'تمت الموافقة على طلب التأخير'); }, 'approve');
+        if(r.type === 'assist') b('🚗 جارٍ التعامل', 'btn-primary', function(){ transition(r, 'in_progress', {}, 'جارٍ التعامل مع الطلب', 'سُجّل: جارٍ التعامل'); }, 'start');
       }
+      if(r.type === 'assist' && (r.status === 'new' || r.status === 'in_progress')) b('✓ تمت المعالجة', 'btn-ok', function(){
+        formModal({title:'إغلاق طلب المساعدة', submitLabel:'تمت المعالجة', fields:[{key:'note', label:'ما الذي تم؟', type:'textarea'}],
+          onSubmit:function(v){ return transition(r, 'done', {}, v.note || 'تمت المعالجة', 'أُغلق طلب المساعدة'); }});
+      }, 'complete');
       if(r.status === 'approved' && r.type === 'maintenance') b('🔧 بدء التنفيذ', 'btn-primary', function(){ startMaintenance(r); }, 'start');
-      if(r.status === 'in_progress') b('✓ إنهاء العمل وإدخال الكلفة', 'btn-ok', function(){ finishMaintenance(r); }, 'finish');
+      if(r.status === 'in_progress' && r.type === 'maintenance') b('✓ إنهاء العمل وإدخال الكلفة', 'btn-ok', function(){ finishMaintenance(r); }, 'finish');
       if(['new','approved','in_progress'].indexOf(r.status) >= 0) b('✕ رفض', 'btn-danger', function(){ rejectRequest(r); }, 'reject');
     }
     if(isFinance() && r.status === 'awaiting_finance'){
@@ -1673,7 +1750,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   function completeWash(r){
     formModal({title:'إنجاز طلب الغسل', submitLabel:'تأكيد الإنجاز', fields:[
       {key:'cost', label:'الكلفة بالدينار (اتركها 0 إن لم تكن هناك كلفة)', type:'number', min:0, value:num(r.cost), inputmode:'numeric'},
-      {key:'place', label:'المكان', value:r.place || ''}
+      {key:'place', label:'المكان', type:'select', options:washPlaceOptions(), value:r.place === 'خارجي' ? 'خارجي' : GARAGE}
     ], onSubmit:function(v){
       var cost = num(v.cost);
       return transition(r, cost > 0 ? 'awaiting_finance' : 'done', {cost:cost, place:v.place}, cost > 0 ? 'أُنجز الغسل — بانتظار المالية' : 'أُنجز الغسل',
@@ -1688,7 +1765,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   function finishMaintenance(r){
     formModal({title:'إنهاء الصيانة', submitLabel:'حفظ', fields:[
       {key:'actualCost', label:'الكلفة الفعلية بالدينار', type:'number', min:0, required:true, value:r.estCost || '', inputmode:'numeric'},
-      {key:'workshop', label:'الورشة', value:r.workshop || ''},
+      workshopFields('الورشة', r.workshop)[0], workshopFields('الورشة', r.workshop)[1],
       {key:'odometer', label:'قراءة العداد', type:'number', min:0, value:r.odometer || currentOdo(r.vehicleId) || ''},
       {key:'oilChanged', label:'تم تبديل الدهن في هذه الصيانة', type:'toggle'},
       {key:'note', label:'ملاحظة', type:'textarea'}
@@ -1699,8 +1776,62 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
         if(val.oilChanged) vu.lastOilChangeKm = num(val.odometer) || currentOdo(v.id);
         commit(db.collection('vehicles').doc(v.id).update(vu));
       }
-      return transition(r, cost > 0 ? 'awaiting_finance' : 'done', {actualCost:cost, workshop:val.workshop, odometer:val.odometer || r.odometer || null, finishedAt:nowISO()},
+      return transition(r, cost > 0 ? 'awaiting_finance' : 'done', {actualCost:cost, workshop:workshopValue(val), odometer:val.odometer || r.odometer || null, finishedAt:nowISO()},
         val.note || (cost > 0 ? 'انتهى العمل — بانتظار المالية' : 'انتهى العمل'), cost > 0 ? 'انتهت الصيانة وأُحيلت الكلفة إلى المالية' : 'انتهت الصيانة');
+    }});
+  }
+
+  /* الورشة: كراج العتبة أو خارجي (مع اسم المكان الخارجي) */
+  function workshopFields(label, current){
+    var isExt = !!current && current !== GARAGE;
+    var ext = isExt ? String(current).replace(/^خارجي\s*(—\s*)?/, '') : '';
+    return [
+      {key:'workshopType', label:label, type:'select', options:[opt('ataba', GARAGE), opt('external', 'خارجي')], value:isExt ? 'external' : 'ataba',
+        onChange:function(v, ctx){ ctx.show('workshopExternal', v === 'external'); }},
+      {key:'workshopExternal', label:'المكان الخارجي', value:ext, hidden:!isExt, placeholder:'اسم الورشة أو المكان'}
+    ];
+  }
+  function workshopValue(val){ return val.workshopType === 'external' ? 'خارجي' + (val.workshopExternal ? ' — ' + val.workshopExternal : '') : GARAGE; }
+  function washPlaceOptions(){ return [opt(GARAGE, GARAGE), opt('خارجي', 'خارجي')]; }
+
+  /* طلبا السائق الطارئان: تأخير العودة، والمساعدة عند عطل في الطريق */
+  function openDriverAlertForm(type){
+    var myDriver = S.profile.driverId && driverById(S.profile.driverId);
+    if(!myDriver){ showToast('حسابك غير مرتبط بسجل سائق — راجع مدير الآليات'); return; }
+    var withMe = S.vehicles.find(function(v){ var s = derived.live[v.id]; return s.where === 'out' && s.driverId === myDriver.id; });
+    var fields = [{key:'vehicleId', label:'العجلة', type:'select', options:vehicleOptions(), value:withMe ? withMe.id : '', required:true}];
+    var intro;
+    if(type === 'delay'){
+      var def = new Date(Date.now() + 3*3600000);
+      intro = 'إذا حصل أمر طارئ يمنعك من إعادة العجلة في الوقت المحدد، اطلب التأخير هنا. تُحال إلى مدير الآليات للموافقة.';
+      fields.push(
+        {key:'untilAt', label:'وقت العودة المتوقع', type:'datetime-local', required:true, value:fmtISODate(def)+'T'+pad(def.getHours())+':'+pad(def.getMinutes())},
+        {key:'reason', label:'سبب التأخير', type:'textarea', required:true}
+      );
+    } else {
+      intro = 'لعطل في العجلة أو حادث أو أي مشكلة في الطريق. يظهر الطلب فوراً كتنبيه عاجل لدى مدير الآليات.';
+      fields.push(
+        {key:'description', label:'المشكلة', type:'textarea', required:true, placeholder:'مثال: بنچر في الإطار الخلفي، أو العجلة لا تعمل'},
+        {key:'location', label:'موقعك الحالي', required:true, placeholder:'مثال: طريق كربلاء–بغداد قرب سيطرة ...'},
+        {key:'phone', label:'رقم هاتف للتواصل', type:'tel', inputmode:'tel', value:myDriver.phone || ''}
+      );
+    }
+    formModal({title:REQ_ICON[type]+' '+REQ_TYPE[type], intro:intro, submitLabel:'إرسال', fields:fields, onSubmit:function(val){
+      var v = vehicleById(val.vehicleId);
+      if(!v) throw 'اختر العجلة';
+      var a = actor();
+      var data = stamp({type:type, vehicleId:v.id, driverId:myDriver.id, driverName:myDriver.name, status:'new',
+        history:[{status:'new', at:nowISO(), by:a.by, byName:a.byName, note:''}]});
+      if(type === 'delay'){
+        var until = toDate(val.untilAt);
+        if(!until || until.getTime() <= Date.now()) throw 'وقت العودة يجب أن يكون في المستقبل';
+        data.untilAt = until.toISOString(); data.reason = val.reason;
+      } else {
+        data.description = val.description; data.location = val.location; data.phone = val.phone;
+      }
+      var ref = db.collection('requests').doc();
+      audit('request.create', 'requests', ref.id, REQ_TYPE[type]+' — '+v.plate);
+      return commit(ref.set(data), 'أُرسل '+REQ_TYPE[type]+' إلى مدير الآليات');
     }});
   }
 
@@ -1740,14 +1871,14 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       fields.push(
         {key:'description', label:'وصف العطل أو العمل المطلوب', type:'textarea', required:true},
         {key:'odometer', label:'قراءة العداد', type:'number', min:0, inputmode:'numeric'},
-        {key:'workshop', label:'الورشة المقترحة'},
+        workshopFields('الورشة المقترحة', '')[0], workshopFields('الورشة المقترحة', '')[1],
         {key:'estCost', label:'الكلفة التقديرية (دينار)', type:'number', min:0, inputmode:'numeric'},
         {key:'receipt', label:'صورة (اختياري)', type:'file', capture:true}
       );
     } else {
       fields.push(
         {key:'kind', label:'نوع الطلب', type:'select', options:mapOptions(WASH_KIND), value:'wash', required:true},
-        {key:'place', label:'المكان'},
+        {key:'place', label:'المكان', type:'select', options:washPlaceOptions(), value:GARAGE},
         {key:'cost', label:'الكلفة (دينار) إن وُجدت', type:'number', min:0, inputmode:'numeric', help:'إن كانت هناك كلفة يمر الطلب على المالية'},
         {key:'note', label:'ملاحظة', type:'textarea'}
       );
@@ -1767,6 +1898,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       var a = actor();
       var data = stamp({type:type, vehicleId:v.id, driverId:drv.driverId, driverName:drv.driverName, status:'new',
         history:[{status:'new', at:nowISO(), by:a.by, byName:a.byName, note:''}]});
+      if(type === 'maintenance') val.workshop = workshopValue(val);
       ['fuelType','liters','amount','odometer','station','payMethod','note','description','workshop','estCost','kind','place','cost'].forEach(function(k){
         if(val[k] !== undefined && val[k] !== '' && val[k] !== null) data[k] = val[k];
       });
@@ -1809,7 +1941,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       appendKids(this.list, list.map(function(v){
         var s = derived.live[v.id], dd = driverById(v.defaultDriverId);
         var warn = [];
-        [['registrationExpiry','السنوية'],['insuranceExpiry','التأمين']].forEach(function(p){ var d = daysUntil(v[p[0]]); if(d !== null && d <= settings().expiryWarnDays) warn.push(p[1]+(d < 0 ? ' منتهية' : ' تنتهي خلال '+d+' يوم')); });
+        [['registrationExpiry','السنوية']].forEach(function(p){ var d = daysUntil(v[p[0]]); if(d !== null && d <= settings().expiryWarnDays) warn.push(p[1]+(d < 0 ? ' منتهية' : ' تنتهي خلال '+d+' يوم')); });
         return el('div',{class:'v-card', 'data-status':v.status === 'maintenance' || v.status === 'broken' ? 'maint' : s.where === 'out' ? (s.late ? 'late' : 'out') : 'in', 'data-vehicle':v.id},[
           el('div',{class:'v-head'},[el('span',{class:'v-plate plate', text:v.plate}), pill(v.status || 'active', VSTATUS_LABEL[v.status || 'active'])]),
           el('div',{class:'v-detail'},[
@@ -1837,7 +1969,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     var kv = [
       ['رقم اللوحة', v.plate], ['المحافظة', v.province], ['النوع والموديل', [v.make, v.model].filter(Boolean).join(' ')], ['سنة الصنع', v.year],
       ['اللون', v.color], ['رقم الشاصي', v.chassis], ['نوع الوقود', FUEL_LABEL[v.fuelType]], ['العداد الحالي', fmtNum(currentOdo(v.id))+' كم'],
-      ['آخر تبديل دهن', v.lastOilChangeKm ? fmtNum(v.lastOilChangeKm)+' كم' : '—'], ['انتهاء السنوية', fmtDate(v.registrationExpiry)], ['انتهاء التأمين', fmtDate(v.insuranceExpiry)],
+      ['آخر تبديل دهن', v.lastOilChangeKm ? fmtNum(v.lastOilChangeKm)+' كم' : '—'], ['انتهاء السنوية', fmtDate(v.registrationExpiry)],
       ['الحالة', VSTATUS_LABEL[v.status || 'active']], ['الجهة المستفيدة', v.department], ['السائق الافتراضي', dd ? dd.name : '—'],
       ['معدل الاستهلاك', avg ? fmtNum(avg.kmpl,1)+' كم/لتر' : 'غير كافٍ للحساب'], ['صرفيات هذا الشهر', fmtIQD(monthCost)],
       ['الموقع الآن', s.where === 'out' ? 'خارج الجامعة منذ '+fmtDT(s.since)+' مع '+driverLabel(s.driverId, s.driverName) : 'داخل — '+(s.locationId ? locationName(s.locationId) : 'غير محدد')]
@@ -1871,7 +2003,6 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       {key:'odometer', label:'العداد الحالي (كم)', type:'number', min:0, value:isNew ? '' : currentOdo(v.id)},
       {key:'lastOilChangeKm', label:'عداد آخر تبديل دهن', type:'number', min:0, value:v.lastOilChangeKm},
       {key:'registrationExpiry', label:'تاريخ انتهاء السنوية', type:'date', value:v.registrationExpiry},
-      {key:'insuranceExpiry', label:'تاريخ انتهاء التأمين', type:'date', value:v.insuranceExpiry},
       {key:'status', label:'الحالة', type:'select', options:mapOptions(VSTATUS_LABEL), value:v.status || 'active'},
       {key:'department', label:'الجهة المستفيدة', value:v.department},
       {key:'defaultDriverId', label:'السائق الافتراضي', type:'select', options:driverOptions('بدون'), value:dd ? dd.id : ''},
@@ -1881,7 +2012,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       var dup = S.vehicles.find(function(x){ return x.id !== v.id && normName(x.plate) === normName(val.plate) && normName(x.province) === normName(val.province); });
       if(dup) throw 'رقم اللوحة مسجّل مسبقاً للعجلة '+dup.plate;
       var data = {};
-      ['plate','province','make','model','year','color','chassis','fuelType','odometer','lastOilChangeKm','registrationExpiry','insuranceExpiry','status','department','defaultDriverId','notes'].forEach(function(k){
+      ['plate','province','make','model','year','color','chassis','fuelType','odometer','lastOilChangeKm','registrationExpiry','status','department','defaultDriverId','notes'].forEach(function(k){
         data[k] = val[k] === null ? '' : val[k];
       });
       data.updatedAt = nowISO();
@@ -1899,126 +2030,274 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   }
 
   /* ---------------- السائقون ---------------- */
+  /* النقاط سنوية: الرصيد يبدأ من صفر في بداية كل سنة، ويضيف مدير الآليات أو مدير القسم
+     (للسائقين التابعين له) نقاط شكر وتقدير أو يخصم نقاط عقوبة. */
+  var photoCache = {};
+  function driverAvatar(d, size){
+    size = size || 44;
+    var box = el('span',{class:'avatar', style:{width:size+'px', height:size+'px', fontSize:Math.round(size*0.42)+'px'}}, [String(d.name || '?').trim().charAt(0)]);
+    if(d.photoId){
+      var set = function(src){ clear(box); box.appendChild(el('img',{src:src, alt:'صورة '+d.name})); };
+      if(photoCache[d.photoId]) set(photoCache[d.photoId]);
+      else db.collection('attachments').doc(d.photoId).get().then(function(s){ if(s.exists){ photoCache[d.photoId] = s.data().data; set(photoCache[d.photoId]); } }).catch(function(){});
+    }
+    return box;
+  }
+  function yearOptions(){
+    var y = new Date().getFullYear(), min = y - 1;
+    S.points.forEach(function(p){ var py = Number(pointYear(p)); if(py && py < min) min = py; });
+    var out = []; for(var i = y; i >= min; i--) out.push(String(i));
+    return out;
+  }
+  function pointsClass(n){ return n > 0 ? 'high' : n < 0 ? 'low' : ''; }
+  function signed(n){ n = num(n); return (n > 0 ? '+' : '') + fmtNum(n); }
+
   PANELS.drivers = {
     build:function(root){
       var self = this;
-      this.monthInput = el('input',{class:'input', type:'month', value:tabState.pointsMonth, style:{maxWidth:'190px'}, onchange:function(){ tabState.pointsMonth = self.monthInput.value || monthKey(new Date()); self.refresh(); }});
-      this.board = el('div',{class:'stack'});
-      this.list = el('div',{class:'grid-cards'});
-      root.appendChild(el('div',{class:'card'},[
-        el('div',{class:'row-between'},[el('h2',{text:'ترتيب السائقين حسب النقاط'}), this.monthInput]),
-        el('p',{class:'muted', text:'رصيد شهري يبدأ بـ '+settings().startPoints+' نقطة. خصم تلقائي '+settings().latePenalty+' نقاط لكل تأخر في إرجاع العجلة (أكثر من '+settings().overdueHours+' ساعة)، و'+settings().fuelPenalty+' نقاط لكل تعبئة باستهلاك أعلى من معدل العجلة بأكثر من '+settings().fuelOverusePct+'%، مع خصم أو إضافة يدوية من مدير الآليات.'}),
-        this.board
-      ]));
+      if(!tabState.pointsYear) tabState.pointsYear = thisYear();
+      if(!tabState.driversSort) tabState.driversSort = 'points';
+      if(tabState.driversMine === undefined) tabState.driversMine = role() === 'supervisor';
+      this.search = el('input',{class:'input grow', type:'search', id:'driverSearch', placeholder:'ابحث باسم السائق...', value:tabState.driversSearch || '',
+        oninput:function(){ tabState.driversSearch = self.search.value; self.refresh(); }});
+      this.yearSel = el('select',{class:'input', id:'driversYear', style:{maxWidth:'130px'}, onchange:function(){ tabState.pointsYear = self.yearSel.value; self.refresh(); }});
+      this.chips = el('div',{class:'chip-row'});
+      this.list = el('div',{class:'stack'});
       root.appendChild(el('div',{class:'card'},[
         el('div',{class:'row-between'},[el('h2',{text:'السائقون'}), isFleet() ? el('button',{class:'btn btn-primary', type:'button', id:'addDriverBtn', text:'+ إضافة سائق', onclick:function(){ openDriverForm(null); }}) : null]),
-        this.list
+        el('p',{class:'muted', text:'رصيد كل سائق يبدأ من صفر في بداية كل سنة. يضيف مدير الآليات أو مدير القسم نقاط الشكر والتقدير أو يخصم نقاط العقوبات. اضغط على السائق لعرض ملفه.'}),
+        el('div',{class:'row'},[this.search, this.yearSel]),
+        this.chips, this.list
       ]));
     },
     refresh:function(){
-      var mk = tabState.pointsMonth;
-      clear(this.board); clear(this.list);
-      var drivers = activeDrivers();
-      var scored = drivers.map(function(d){ return {d:d, s:driverScore(d.id, mk)}; }).sort(function(a,b){ return b.s.total - a.s.total || b.s.stars - a.s.stars; });
-      if(!scored.length) this.board.appendChild(emptyNote('لا يوجد سائقون مسجّلون.'));
-      var self = this;
-      scored.forEach(function(x, i){
-        var cls = x.s.total >= 90 ? 'high' : x.s.total >= 70 ? 'mid' : 'low';
-        self.board.appendChild(el('div',{class:'item', 'data-driver-rank':x.d.id},[
+      var self = this, year = tabState.pointsYear, q = normName(tabState.driversSearch);
+      clear(this.yearSel);
+      yearOptions().forEach(function(y){ self.yearSel.appendChild(el('option',{value:y, text:'سنة '+y, selected:y === year})); });
+      clear(this.chips);
+      [['points','حسب النقاط'],['alpha','أبجدياً']].forEach(function(c){
+        self.chips.appendChild(el('button',{class:'chip'+(tabState.driversSort === c[0] ? ' active' : ''), type:'button', 'data-sort':c[0], text:c[1], onclick:function(){ tabState.driversSort = c[0]; self.refresh(); }}));
+      });
+      if(role() === 'supervisor') self.chips.appendChild(el('button',{class:'chip'+(tabState.driversMine ? ' active' : ''), type:'button', id:'driversMineChip', text:'سائقو قسمي فقط', onclick:function(){ tabState.driversMine = !tabState.driversMine; self.refresh(); }}));
+      clear(this.list);
+      var all = S.drivers.filter(function(d){ return d.active !== false || isFleet(); })
+        .filter(function(d){ return !(role() === 'supervisor' && tabState.driversMine) || d.supervisorId === S.authUser.uid; })
+        .map(function(d){ return {d:d, s:driverScore(d.id, year)}; });
+      // الترتيب حسب النقاط يُحسب دائماً ليظهر رقم المرتبة حتى في العرض الأبجدي
+      all.slice().sort(function(a,b){ return b.s.total - a.s.total || b.s.starsAvg - a.s.starsAvg || a.d.name.localeCompare(b.d.name,'ar'); })
+        .forEach(function(x, i){ x.rank = i + 1; });
+      var list = all.filter(function(x){ return !q || normName(x.d.name).indexOf(q) >= 0; });
+      list.sort(tabState.driversSort === 'alpha'
+        ? function(a,b){ return a.d.name.localeCompare(b.d.name,'ar'); }
+        : function(a,b){ return a.rank - b.rank; });
+      if(!list.length){ this.list.appendChild(emptyNote(q ? 'لا يوجد سائق بهذا الاسم.' : 'لا يوجد سائقون.')); return; }
+      list.forEach(function(x){
+        var d = x.d, sc = x.s;
+        self.list.appendChild(el('div',{class:'item driver-row', 'data-driver':d.id, 'data-driver-rank':d.id},[
           el('div',{class:'row-between'},[
-            el('div',{class:'row'},[el('span',{class:'rank', text:String(i+1)}), el('div',{class:'stack', style:{gap:'2px'}},[
-              el('b',{text:x.d.name}),
-              el('span',{class:'faint'},[x.s.trips.length+' رحلة · تأخر '+x.s.late.length+' · استهلاك مرتفع '+x.s.overFuel.length+(x.s.manualSum ? ' · يدوي '+(x.s.manualSum > 0 ? '+' : '')+x.s.manualSum : '')])
-            ])]),
-            el('div',{class:'row'},[
-              x.s.stars ? el('span',{class:'stars', text:'★'.repeat(x.s.stars)+'☆'.repeat(5-x.s.stars)}) : null,
-              el('span',{class:'points '+cls, text:fmtNum(x.s.total)})
+            el('button',{class:'driver-open', type:'button', 'data-open-driver':d.id, onclick:function(){ openDriverProfile(d.id, year); }},[
+              el('span',{class:'rank', text:String(x.rank)}), driverAvatar(d, 42),
+              el('span',{class:'stack', style:{gap:'2px', textAlign:'start'}},[
+                el('b',{text:d.name + (d.active === false ? ' (غير فعّال)' : '')}),
+                el('span',{class:'faint'},['شكر وتقدير '+sc.thanks.length+' · عقوبات '+sc.penalties.length+' · رحلات '+sc.trips.length])
+              ])
+            ]),
+            el('span',{class:'row'},[
+              sc.starCount ? el('span',{class:'stars', title:'متوسط '+fmtNum(sc.starsAvg,1), text:starsText(sc.stars)}) : null,
+              el('span',{class:'points '+pointsClass(sc.total), text:signed(sc.total)})
             ])
           ]),
-          isFleet() ? el('div',{class:'item-actions'},[
-            el('button',{class:'btn btn-sm', type:'button', 'data-points':x.d.id, text:'± نقاط', onclick:function(){ openPointsForm(x.d, mk); }}),
-            el('button',{class:'btn btn-sm', type:'button', 'data-stars':x.d.id, text:'★ تقييم الشهر', onclick:function(){ openStarsForm(x.d, mk); }}),
-            el('button',{class:'btn btn-sm btn-ghost', type:'button', text:'السجل', onclick:function(){ openPointsHistory(x.d, mk); }})
-          ]) : el('div',{class:'item-actions'},[el('button',{class:'btn btn-sm btn-ghost', type:'button', text:'السجل', onclick:function(){ openPointsHistory(x.d, mk); }})])
-        ]));
-      });
-      S.drivers.slice().sort(function(a,b){ return a.name.localeCompare(b.name,'ar'); }).forEach(function(d){
-        var vs = S.vehicles.filter(function(v){ return v.defaultDriverId === d.id; });
-        var dl = daysUntil(d.licenseExpiry);
-        var cur = S.vehicles.filter(function(v){ var s = derived.live[v.id]; return s.where === 'out' && s.driverId === d.id; });
-        self.list.appendChild(el('div',{class:'v-card', 'data-status':d.active === false ? 'maint' : cur.length ? 'out' : 'in', 'data-driver':d.id},[
-          el('div',{class:'v-head'},[el('b',{text:d.name}), d.active === false ? pill('rejected','غير فعّال') : cur.length ? pill('out','في مهمة') : pill('in','متاح')]),
-          el('div',{class:'v-detail'},[
-            d.phone ? el('div',{},['الهاتف: ', el('span',{class:'num', text:d.phone})]) : null,
-            el('div',{},['العجلات المخصصة: ', vs.length ? vs.map(function(v){ return v.plate; }).join('، ') : '—']),
-            d.licenseExpiry ? el('div',{style:dl !== null && dl <= settings().expiryWarnDays ? {color:'var(--busy)', fontWeight:'700'} : null},['انتهاء إجازة السوق: ', fmtDate(d.licenseExpiry)]) : null,
-            cur.length ? el('div',{},['الآن مع: ', cur.map(function(v){ return v.plate; }).join('، ')]) : null
-          ]),
-          el('div',{class:'item-actions'},[
-            tabsForRole().indexOf('reports') >= 0 ? el('button',{class:'btn btn-sm', type:'button', text:'تقرير السائق', onclick:function(){ tabState.reportType = 'driver'; tabState.reportEntity = d.id; goTab('reports', function(){ PANELS.reports.run(); }); }}) : null,
+          (canManagePoints(d) || isFleet()) ? el('div',{class:'item-actions'},[
+            canManagePoints(d) ? el('button',{class:'btn btn-sm', type:'button', 'data-points':d.id, text:'± شكر / عقوبة', onclick:function(){ openPointsForm(d); }}) : null,
+            canManagePoints(d) ? el('button',{class:'btn btn-sm', type:'button', 'data-stars':d.id, text:'★ تقييم', onclick:function(){ openStarsForm(d, year); }}) : null,
             isFleet() ? el('button',{class:'btn btn-sm btn-ghost', type:'button', 'data-edit-driver':d.id, text:'تعديل', onclick:function(){ openDriverForm(d); }}) : null
-          ])
+          ]) : null
         ]));
       });
     }
   };
+
+  /* ملف السائق: الصورة والتفاصيل والنقاط والنجوم والشكر والعقوبات للسنة، مع التقرير الكامل */
+  function renderDriverProfileBody(box, d, year, opts){
+    opts = opts || {};
+    clear(box);
+    var sc = driverScore(d.id, year);
+    var sup = d.supervisorId && S.users.find(function(u){ return u.id === d.supervisorId; });
+    var vs = S.vehicles.filter(function(v){ return v.defaultDriverId === d.id; });
+    var cur = S.vehicles.filter(function(v){ var s = derived.live[v.id]; return s.where === 'out' && s.driverId === d.id; });
+    var yearSel = el('select',{class:'input', 'data-profile-year':'1', style:{maxWidth:'130px'}, onchange:function(){ renderDriverProfileBody(box, d, yearSel.value, opts); }},
+      yearOptions().map(function(y){ return el('option',{value:y, text:'سنة '+y, selected:y === String(year)}); }));
+    box.appendChild(el('div',{class:'profile-head'},[
+      driverAvatar(d, 96),
+      el('div',{class:'stack', style:{gap:'4px'}},[
+        el('h2',{text:d.name}),
+        el('div',{class:'row', style:{gap:'6px'}},[d.active === false ? pill('rejected','غير فعّال') : cur.length ? pill('out','في مهمة الآن') : pill('in','متاح')]),
+        d.phone ? el('div',{class:'muted'},['📞 ', el('a',{href:'tel:'+d.phone, class:'num', text:d.phone})]) : null,
+        d.address ? el('div',{class:'muted', text:'🏠 '+d.address}) : null
+      ])
+    ]));
+    box.appendChild(el('dl',{class:'kv'},[
+      ['إجازة السوق', (d.licenseNo || '—') + (d.licenseExpiry ? ' — تنتهي '+stripIsolates(fmtDate(d.licenseExpiry)) : '')],
+      ['المسؤول المباشر', sup ? sup.name : '—'],
+      ['العجلات المخصصة', vs.length ? vs.map(function(v){ return v.plate; }).join('، ') : '—'],
+      ['الآن مع', cur.length ? cur.map(function(v){ return v.plate; }).join('، ') : '—']
+    ].map(function(p){ return [el('dt',{text:p[0]}), el('dd',{text:p[1]})]; })));
+    box.appendChild(el('div',{class:'row-between'},[el('h3',{text:'سجل سنة '+year}), yearSel]));
+    box.appendChild(el('div',{class:'stat-grid'},[
+      statTile(signed(sc.total), 'النقاط', sc.total > 0 ? 'free' : sc.total < 0 ? 'busy' : 'info'),
+      statTile(sc.starCount ? starsText(sc.stars) : '—', 'التقييم'+(sc.starCount ? ' ('+fmtNum(sc.starsAvg,1)+')' : ''), 'pending'),
+      statTile(sc.thanks.length, 'شكر وتقدير', 'free'),
+      statTile(sc.penalties.length, 'عقوبات', 'busy'),
+      statTile(sc.trips.length, 'رحلات', 'info'),
+      statTile(sc.late.length, 'تأخر في الإرجاع', 'busy')
+    ]));
+    if(sc.entries.length){
+      box.appendChild(tableNode(['التاريخ','النوع','النقاط','السبب','أضافها'], sc.entries.map(function(p){
+        return [fmtDate(p.at), el('span',{class:'status-pill '+(p.category === 'thanks' ? 'done' : p.category === 'penalty' ? 'late' : ''), text:POINT_CAT[p.category] || 'نقاط'}),
+          el('b',{class:'num', text:signed(p.delta)}), (p.reason || '') + (p.refNo ? ' — '+p.refNo : ''), p.byName || ''];
+      }), {foot:['المجموع', '', el('b',{class:'num', text:signed(sc.total)}), '', '']}));
+    } else box.appendChild(emptyNote('لا يوجد شكر وتقدير أو عقوبات في هذه السنة.'));
+    var btns = [];
+    if(canManagePoints(d)){
+      btns.push(el('button',{class:'btn btn-primary', type:'button', 'data-profile-points':d.id, text:'± شكر وتقدير / عقوبة', onclick:function(){ openPointsForm(d); }}));
+      btns.push(el('button',{class:'btn', type:'button', text:'★ تقييم', onclick:function(){ openStarsForm(d, year); }}));
+    }
+    if(isFleet() && !opts.self) btns.push(el('button',{class:'btn btn-ghost', type:'button', text:'تعديل البيانات', onclick:function(){ if(opts.close) opts.close(); openDriverForm(d); }}));
+    btns.push(el('button',{class:'btn', type:'button', 'data-full-report':d.id, text:'📄 التقرير الكامل (كل السنوات)', onclick:function(){ openDriverFullReport(d); }}));
+    box.appendChild(el('div',{class:'row'}, btns));
+  }
+  function openDriverProfile(did, year){
+    var d = driverById(did); if(!d) return;
+    var box = el('div',{class:'stack', style:{gap:'14px'}});
+    var opts = {};
+    opts.close = openModal({title:'ملف السائق', wide:true, body:[box], noFocus:true});
+    renderDriverProfileBody(box, d, year || thisYear(), opts);
+  }
+  function openDriverFullReport(d){
+    var box = el('div');
+    openModal({title:'التقرير الكامل — '+d.name, wide:true, body:[box], noFocus:true});
+    renderReport(driverReportSpec(d.id, new Date(2000,0,1), endOfDay(new Date()), true), box, {modal:true});
+  }
+
   function openDriverForm(d){
     var isNew = !d; d = d || {};
+    var sups = S.users.filter(function(u){ return u.role === 'supervisor' && u.active !== false; });
     formModal({title:isNew ? 'إضافة سائق' : 'تعديل بيانات '+d.name, submitLabel:isNew ? 'إضافة' : 'حفظ', fields:[
       {key:'name', label:'الاسم الكامل', value:d.name, required:true},
       {key:'phone', label:'رقم الهاتف', value:d.phone, type:'tel', inputmode:'tel'},
+      {key:'address', label:'عنوان السكن', value:d.address},
       {key:'licenseNo', label:'رقم إجازة السوق', value:d.licenseNo},
       {key:'licenseExpiry', label:'انتهاء إجازة السوق', type:'date', value:d.licenseExpiry},
+      {key:'supervisorId', label:'المسؤول المباشر (مدير القسم)', type:'select', options:[opt('', 'لا يوجد')].concat(sups.map(function(u){ return opt(u.id, u.name); })), value:d.supervisorId || '',
+        help:sups.length ? '' : 'أنشئ أولاً حساباً بدور "مدير القسم" من تبويب الإدارة'},
+      {key:'photo', label:d.photoId ? 'استبدال الصورة الشخصية (اختياري)' : 'الصورة الشخصية (اختياري)', type:'file'},
       {key:'active', label:'فعّال', type:'toggle', value:isNew || d.active !== false},
       {key:'notes', label:'ملاحظات', type:'textarea', value:d.notes}
     ], onSubmit:function(val){
       var dup = S.drivers.find(function(x){ return x.id !== d.id && normName(x.name) === normName(val.name); });
       if(dup) throw 'يوجد سائق مسجّل بالاسم نفسه';
-      var data = {name:val.name, phone:val.phone, licenseNo:val.licenseNo, licenseExpiry:val.licenseExpiry, active:val.active, notes:val.notes, updatedAt:nowISO()};
-      if(isNew){
-        var ref = db.collection('drivers').doc();
-        audit('driver.create', 'drivers', ref.id, val.name);
-        return commit(ref.set(stamp(data)), 'أُضيف السائق '+val.name);
-      }
-      audit('driver.update', 'drivers', d.id, val.name);
-      return commit(db.collection('drivers').doc(d.id).update(data), 'حُفظت التعديلات');
+      var data = {name:val.name, phone:val.phone, address:val.address, licenseNo:val.licenseNo, licenseExpiry:val.licenseExpiry, supervisorId:val.supervisorId, active:val.active, notes:val.notes, updatedAt:nowISO()};
+      return saveAttachment(val.photo, 'driver').then(function(attId){
+        if(attId) data.photoId = attId;
+        if(isNew){
+          var ref = db.collection('drivers').doc();
+          audit('driver.create', 'drivers', ref.id, val.name);
+          return commit(ref.set(stamp(data)), 'أُضيف السائق '+val.name);
+        }
+        audit('driver.update', 'drivers', d.id, val.name);
+        return commit(db.collection('drivers').doc(d.id).update(data), 'حُفظت التعديلات');
+      });
     }});
   }
-  function openPointsForm(d, mk){
-    formModal({title:'خصم أو إضافة نقاط — '+d.name, intro:'الشهر: '+monthLabel(mk)+'. اكتب رقماً سالباً للخصم (مثل -10) أو موجباً للإضافة.', submitLabel:'حفظ', fields:[
-      {key:'delta', label:'النقاط', type:'number', required:true, step:1, inputmode:'numeric', placeholder:'-10 أو 5'},
-      {key:'category', label:'التصنيف', type:'select', options:[opt('violation','مخالفة'), opt('accident','حادث'), opt('excellence','التزام متميز'), opt('other','أخرى')], value:'violation'},
+
+  /* شكر وتقدير أو عقوبة: العدّاد يحدد عدد النقاط، والنوع يحدد الإضافة أو الخصم */
+  function openPointsForm(d){
+    var today = fmtISODate(new Date());
+    var ctxRef = null;
+    function hint(){
+      if(!ctxRef) return;
+      var c = ctxRef.get('category'), n = Math.abs(num(ctxRef.get('points')));
+      ctxRef.error('');
+      var el2 = document.querySelector('.modal [data-points-hint]');
+      if(el2) el2.textContent = c === 'penalty' ? 'سيُخصم '+fmtNum(n)+' من رصيد السائق' : c === 'thanks' ? 'سيُضاف '+fmtNum(n)+' إلى رصيد السائق' : 'اكتب رقماً موجباً للإضافة أو سالباً للخصم';
+    }
+    ctxRef = formModal({title:'شكر وتقدير / عقوبة — '+d.name, submitLabel:'حفظ', fields:[
+      {key:'category', label:'النوع', type:'select', options:mapOptions(POINT_CAT), value:'thanks', required:true, onChange:hint},
+      {key:'points', label:'عدد النقاط', type:'stepper', value:5, required:true, onChange:hint},
+      {key:'date', label:'التاريخ', type:'date', value:today, required:true},
+      {key:'refNo', label:'رقم الكتاب أو الأمر الإداري (اختياري)', placeholder:'مثال: 1234 في 2026/09/20'},
       {key:'reason', label:'السبب', type:'textarea', required:true}
     ], onSubmit:function(val){
-      if(!val.delta) throw 'اكتب عدد النقاط';
+      var n = num(val.points);
+      if(!n) throw 'اختر عدد النقاط';
+      var delta = val.category === 'penalty' ? -Math.abs(n) : val.category === 'thanks' ? Math.abs(n) : n;
+      var at = toDate(val.date + 'T12:00:00') || new Date();
       var a = actor();
       var ref = db.collection('driverPoints').doc();
-      audit('points.manual', 'driverPoints', ref.id, d.name+' '+val.delta+' — '+val.reason);
-      return commit(ref.set({driverId:d.id, month:mk, kind:'manual', delta:val.delta, category:val.category, reason:val.reason, by:a.by, byName:a.byName, at:nowISO()}), 'حُفظت النقاط');
+      audit('points.'+val.category, 'driverPoints', ref.id, d.name+' '+signed(delta)+' — '+val.reason);
+      return commit(ref.set({driverId:d.id, year:String(at.getFullYear()), kind:'manual', category:val.category, delta:delta, reason:val.reason, refNo:val.refNo, by:a.by, byName:a.byName, at:at.toISOString(), createdAt:nowISO()}),
+        (delta >= 0 ? 'أُضيفت ' : 'خُصمت ')+fmtNum(Math.abs(delta))+' نقطة — '+d.name);
     }});
+    var help = document.querySelector('.modal [name=points]');
+    if(help && help.closest('.field')) help.closest('.field').appendChild(el('span',{class:'help', 'data-points-hint':'1'}));
+    hint();
   }
-  function openStarsForm(d, mk){
-    var cur = driverScore(d.id, mk).stars;
-    formModal({title:'تقييم الشهر — '+d.name, intro:'الشهر: '+monthLabel(mk), submitLabel:'حفظ التقييم', fields:[
-      {key:'stars', label:'التقييم', type:'select', options:[5,4,3,2,1].map(function(n){ return opt(String(n), '★'.repeat(n)+'☆'.repeat(5-n)+' ('+n+')'); }), value:String(cur || 5), required:true},
+  function openStarsForm(d, year){
+    year = String(year || thisYear());
+    formModal({title:'تقييم السائق — '+d.name, intro:'يُحسب تقييم السنة '+year+' من متوسط التقييمات المسجلة فيها.', submitLabel:'حفظ التقييم', fields:[
+      {key:'stars', label:'التقييم', type:'select', options:[5,4,3,2,1].map(function(n){ return opt(String(n), starsText(n)+' ('+n+')'); }), value:'5', required:true},
       {key:'reason', label:'ملاحظة', type:'textarea'}
     ], onSubmit:function(val){
       var a = actor();
       var ref = db.collection('driverPoints').doc();
       audit('points.stars', 'driverPoints', ref.id, d.name+' '+val.stars+' نجوم');
-      return commit(ref.set({driverId:d.id, month:mk, kind:'stars', stars:Number(val.stars), reason:val.reason, by:a.by, byName:a.byName, at:nowISO()}), 'حُفظ التقييم');
+      return commit(ref.set({driverId:d.id, year:year, kind:'stars', stars:Number(val.stars), reason:val.reason, by:a.by, byName:a.byName, at:nowISO(), createdAt:nowISO()}), 'حُفظ التقييم');
     }});
   }
-  function openPointsHistory(d, mk){
-    var sc = driverScore(d.id, mk), st = settings();
-    var rows = [['رصيد بداية الشهر', '+'+st.startPoints, '']];
-    sc.late.forEach(function(t){ rows.push(['تأخر إرجاع '+(vehicleById(t.vehicleId) || {}).plate, '-'+st.latePenalty, fmtDT(t.outAt)+' ('+fmtDuration(t.durationMs)+')']); });
-    sc.overFuel.forEach(function(r){ rows.push(['استهلاك وقود مرتفع '+(vehicleById(r.vehicleId) || {}).plate, '-'+st.fuelPenalty, fmtDate(r.createdAt)+' ('+fmtNum(derived.fuelEff[r.id],1)+' كم/لتر)']); });
-    sc.manual.forEach(function(p){ rows.push([p.reason || 'يدوي', (p.delta > 0 ? '+' : '')+p.delta, fmtDate(p.at)+' — '+(p.byName || '')]); });
-    openModal({title:'سجل نقاط '+d.name+' — '+monthLabel(mk), wide:true, body:[
-      tableNode(['البند','النقاط','التفاصيل'], rows, {foot:['المجموع', fmtNum(sc.total), sc.stars ? '★'.repeat(sc.stars) : '']})
-    ]});
+
+  /* ---------------- ملفي (واجهة السائق) ---------------- */
+  PANELS.me = {
+    build:function(root){
+      this.profile = el('div',{class:'card'});
+      this.actions = el('div',{class:'card'});
+      appendKids(root, [this.actions, this.profile]);
+      this.year = thisYear();
+    },
+    refresh:function(){
+      var self = this, d = S.profile.driverId && driverById(S.profile.driverId);
+      clear(this.actions); clear(this.profile);
+      if(!d){ this.profile.appendChild(emptyNote('حسابك غير مرتبط بسجل سائق بعد — راجع مدير الآليات أو مدير النظام.')); this.actions.hidden = true; return; }
+      this.actions.hidden = false;
+      appendKids(this.actions, [
+        el('h2',{text:'طلب عاجل'}),
+        el('p',{class:'muted', text:'إذا كنت خارج الجامعة وحصل أمر طارئ يمنعك من العودة في الوقت المحدد، أو تعطلت العجلة في الطريق.'}),
+        el('div',{class:'grid-cards', style:{gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))'}},[
+          el('button',{class:'btn btn-lg', type:'button', id:'meDelayBtn', text:'⏳ طلب تأخير', onclick:function(){ openDriverAlertForm('delay'); }}),
+          el('button',{class:'btn btn-lg btn-danger', type:'button', id:'meAssistBtn', text:'🆘 طلب مساعدة', onclick:function(){ openDriverAlertForm('assist'); }})
+        ])
+      ]);
+      var box = el('div',{class:'stack', style:{gap:'14px'}});
+      this.profile.appendChild(el('div',{class:'row-between'},[el('h2',{text:'ملفي'}),
+        el('button',{class:'btn btn-primary', type:'button', id:'editMyProfileBtn', text:'✎ تعديل بياناتي', onclick:function(){ openMyProfileForm(d); }})]));
+      this.profile.appendChild(box);
+      renderDriverProfileBody(box, d, this.year, {self:true});
+    }
+  };
+  function openMyProfileForm(d){
+    formModal({title:'تعديل بياناتي', intro:'الاسم: '+d.name+' — لا يمكن تعديل الاسم إلا من قبل مدير الآليات.', submitLabel:'حفظ', fields:[
+      {key:'phone', label:'رقم الهاتف', type:'tel', inputmode:'tel', value:d.phone},
+      {key:'address', label:'عنوان السكن', value:d.address},
+      {key:'photo', label:d.photoId ? 'تغيير صورتي الشخصية' : 'إضافة صورتي الشخصية', type:'file', capture:false}
+    ], onSubmit:function(val){
+      var data = {phone:val.phone, address:val.address, updatedAt:nowISO()};
+      return saveAttachment(val.photo, 'driver').then(function(attId){
+        if(attId) data.photoId = attId;
+        audit('driver.self_update', 'drivers', d.id, d.name);
+        return commit(db.collection('drivers').doc(d.id).update(data), 'حُفظت بياناتك');
+      });
+    }});
   }
+
 
   /* ====================================================================
      التقارير: كل تقرير يُبنى كوصف بيانات {title, meta, stats, sections}
@@ -2046,11 +2325,20 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   function sumBy(list, f){ return list.reduce(function(a,x){ return a + num(f(x)); }, 0); }
   function doneAt(r){ return r.doneAt || r.updatedAt || r.createdAt; }
 
-  function renderReport(spec, container){
+  function renderReport(spec, container, opts){
+    opts = opts || {};
     clear(container);
     var sheet = el('div',{class:'card report-sheet', id:'printableReport'});
     sheet.appendChild(el('div',{class:'row no-print', id:'reportPrintRow'},[
-      el('button',{class:'btn btn-primary', type:'button', id:'printReportBtn', text:'🖨 طباعة', onclick:function(){ window.print(); }}),
+      el('button',{class:'btn btn-primary', type:'button', id:'printReportBtn', text:'🖨 طباعة', onclick:function(){
+        // تقرير داخل نافذة منبثقة: تُخفى الصفحة خلفها أثناء الطباعة حتى لا تُطبع صفحات فارغة
+        var others = Array.prototype.filter.call(document.querySelectorAll('#printableReport'), function(o){ return o !== sheet; });
+        others.forEach(function(o){ o.id = 'printableReport-off'; });
+        if(opts.modal) document.body.classList.add('print-modal');
+        window.print();
+        document.body.classList.remove('print-modal');
+        others.forEach(function(o){ o.id = 'printableReport'; });
+      }}),
       el('button',{class:'btn', type:'button', id:'excelReportBtn', text:'📊 تصدير Excel', onclick:function(){ exportReportExcel(spec); }})
     ]));
     sheet.appendChild(buildReportHead(spec.title));
@@ -2130,34 +2418,45 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       ]
     };
   }
-  function driverReportSpec(did, from, to){
+  function driverReportSpec(did, from, to, allYears){
     var d = driverById(did);
     var trips = derived.trips.filter(function(t){ return t.driverId === did && inRange(t.outAt, from, to); }).sort(function(a,b){ return String(a.outAt).localeCompare(String(b.outAt)); });
     var reqs = S.requests.filter(function(r){ return r.driverId === did && inRange(r.createdAt, from, to); }).sort(function(a,b){ return String(a.createdAt).localeCompare(String(b.createdAt)); });
     var byV = {};
     trips.forEach(function(t){ var x = byV[t.vehicleId] = byV[t.vehicleId] || {trips:0, ms:0, km:0}; x.trips++; x.ms += t.durationMs; x.km += num(t.km); });
-    var mk = monthKey(to), sc = driverScore(did, mk), st = settings();
-    var pointsRows = [['رصيد بداية الشهر', '+'+st.startPoints, '']];
-    sc.late.forEach(function(t){ pointsRows.push(['تأخر إرجاع '+(vehicleById(t.vehicleId) || {}).plate, '-'+st.latePenalty, fmtDT(t.outAt)]); });
-    sc.overFuel.forEach(function(r){ pointsRows.push(['استهلاك وقود مرتفع', '-'+st.fuelPenalty, fmtDate(r.createdAt)]); });
-    sc.manual.forEach(function(p){ pointsRows.push([p.reason || 'يدوي', (p.delta > 0 ? '+' : '')+p.delta, fmtDate(p.at)]); });
+    var pts = S.points.filter(function(p){ return p.driverId === did && p.kind === 'manual' && inRange(p.at, from, to); }).sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); });
+    // ملخص حسب السنة
+    var years = {};
+    S.points.forEach(function(p){ if(p.driverId === did && inRange(p.at, from, to)) years[pointYear(p)] = 1; });
+    trips.forEach(function(t){ years[String(toDate(t.outAt).getFullYear())] = 1; });
+    var yearRows = Object.keys(years).sort().reverse().map(function(y){
+      var sc = driverScore(did, y);
+      return [y, cNum(sc.thanks.length), cNum(sc.penalties.length), {v:sc.total, t:signed(sc.total)}, sc.starCount ? fmtNum(sc.starsAvg,1)+' / 5' : '—', cNum(sc.trips.length)];
+    });
+    var cy = String(to.getFullYear()), cur = driverScore(did, cy);
+    var sup = d.supervisorId && S.users.find(function(u){ return u.id === d.supervisorId; });
+    var firstDate = pts.length ? pts[0].at : trips.length ? trips[0].outAt : null;
     return {
       title:'تقرير السائق '+d.name, fileName:'driver-report',
-      meta:[['السائق', d.name], ['الهاتف', d.phone || '—'], ['الفترة', fmtDate(from)+' إلى '+fmtDate(to)], ['نقاط شهر', monthLabel(mk)]],
+      meta:[['السائق', d.name], ['الهاتف', d.phone || '—'], ['العنوان', d.address || '—'], ['المسؤول المباشر', sup ? sup.name : '—'],
+        ['الفترة', allYears ? 'كل السنوات'+(firstDate ? ' (منذ '+fmtDate(firstDate)+')' : '') : fmtDate(from)+' إلى '+fmtDate(to)]],
       stats:[
         {label:'عدد الرحلات', value:cNum(trips.length)}, {label:'ساعات خارج الجامعة', value:cNum(sumBy(trips, function(t){ return t.durationMs; })/3600000, 1)},
         {label:'العجلات التي ساقها', value:cNum(Object.keys(byV).length)}, {label:'مرات التأخر', value:cNum(trips.filter(function(t){ return t.late; }).length)},
-        {label:'الطلبات', value:cNum(reqs.length)}, {label:'التقييم', value:sc.stars ? '★'.repeat(sc.stars) : '—'},
-        {label:'النقاط', value:cNum(sc.total), total:true}
+        {label:'شكر وتقدير', value:cNum(pts.filter(function(p){ return p.category === 'thanks'; }).length)}, {label:'عقوبات', value:cNum(pts.filter(function(p){ return p.category === 'penalty'; }).length)},
+        {label:'تقييم سنة '+cy, value:cur.starCount ? starsText(cur.stars) : '—'},
+        {label:'نقاط سنة '+cy, value:{v:cur.total, t:signed(cur.total)}, total:true}
       ],
       sections:[
+        {title:'النقاط حسب السنة', headers:['السنة','شكر وتقدير','عقوبات','النقاط','التقييم','الرحلات'], rows:yearRows},
+        {title:'الشكر والتقدير والعقوبات', headers:['التاريخ','السنة','النوع','النقاط','السبب','رقم الكتاب','أضافها'],
+          rows:pts.map(function(p){ return [fmtDate(p.at), pointYear(p), POINT_CAT[p.category] || 'نقاط', {v:num(p.delta), t:signed(p.delta)}, p.reason, p.refNo, p.byName]; })},
         {title:'العجلات التي ساقها', headers:['العجلة','الرحلات','الساعات','المسافة (كم)'],
           rows:Object.keys(byV).map(function(vid){ var x = byV[vid]; return [vehicleLabel(vehicleById(vid)), cNum(x.trips), cNum(x.ms/3600000,1), cNum(x.km)]; })},
         {title:'الرحلات', headers:['العجلة','الخروج','الدخول','المدة','الوجهة'],
-          rows:trips.map(function(t){ return [vehicleLabel(vehicleById(t.vehicleId)), fmtDT(t.outAt), t.inAt ? fmtDT(t.inAt) : 'لم تعد', fmtDuration(t.durationMs)+(t.late ? ' ⚠ متأخرة' : ''), t.purpose]; })},
+          rows:trips.map(function(t){ return [vehicleLabel(vehicleById(t.vehicleId)), fmtDT(t.outAt), t.inAt ? fmtDT(t.inAt) : 'لم تعد', fmtDuration(t.durationMs)+(t.late ? ' ⚠ متأخرة' : t.delayUntil ? ' (تأخير معتمد)' : ''), t.purpose]; })},
         {title:'الطلبات', headers:['التاريخ','النوع','العجلة','المبلغ','الحالة'],
-          rows:reqs.map(function(r){ return [fmtDate(r.createdAt), REQ_TYPE[r.type], vehicleLabel(vehicleById(r.vehicleId)), cIQD(requestAmount(r)), STATUS_LABEL[r.status]]; })},
-        {title:'سجل النقاط — '+monthLabel(mk), headers:['البند','النقاط','التفاصيل'], rows:pointsRows, foot:['المجموع', cNum(sc.total), '']}
+          rows:reqs.map(function(r){ return [fmtDate(r.createdAt), REQ_TYPE[r.type], vehicleLabel(vehicleById(r.vehicleId)), cIQD(requestAmount(r)), STATUS_LABEL[r.status]]; })}
       ]
     };
   }
@@ -2358,8 +2657,8 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       });
       clear(this.settingsBox);
       var st = settings();
-      var labels = {overdueHours:'تنبيه العجلة الخارجة بعد (ساعة)', expiryWarnDays:'تنبيه انتهاء السنوية والتأمين قبل (يوم)', oilChangeKm:'تبديل الدهن كل (كم)',
-        fuelOverusePct:'نسبة الاستهلاك المرتفع (%)', startPoints:'رصيد السائق الشهري (نقطة)', latePenalty:'خصم التأخر (نقطة)', fuelPenalty:'خصم الاستهلاك المرتفع (نقطة)'};
+      var labels = {overdueHours:'تنبيه العجلة الخارجة بعد (ساعة)', expiryWarnDays:'تنبيه انتهاء السنوية قبل (يوم)', oilChangeKm:'تبديل الدهن كل (كم)',
+        fuelOverusePct:'نسبة الاستهلاك المرتفع للتنبيه (%)'};
       this.settingsBox.appendChild(el('div',{class:'kv'}, Object.keys(labels).map(function(k){ return [el('dt',{text:labels[k]}), el('dd',{class:'num', text:String(st[k])})]; })));
       this.settingsBox.appendChild(el('div',{class:'row', style:{marginTop:'10px'}},[el('button',{class:'btn', type:'button', id:'editSettingsBtn', text:'تعديل الإعدادات', onclick:function(){
         formModal({title:'الإعدادات', submitLabel:'حفظ', fields:Object.keys(labels).map(function(k){ return {key:k, label:labels[k], type:'number', min:0, value:st[k], required:true}; }),
@@ -2432,7 +2731,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
 
   /* ---------------- استيراد العجلات والسائقين من Excel ---------------- */
   var IMPORT_COLS = {
-    vehicles:[['plate','رقم اللوحة'],['province','المحافظة'],['make','النوع'],['model','الموديل'],['year','السنة'],['color','اللون'],['chassis','رقم الشاصي'],['fuelType','نوع الوقود'],['odometer','العداد'],['registrationExpiry','انتهاء السنوية'],['insuranceExpiry','انتهاء التأمين'],['department','الجهة المستفيدة'],['defaultDriver','السائق الافتراضي'],['notes','ملاحظات']],
+    vehicles:[['plate','رقم اللوحة'],['province','المحافظة'],['make','النوع'],['model','الموديل'],['year','السنة'],['color','اللون'],['chassis','رقم الشاصي'],['fuelType','نوع الوقود'],['odometer','العداد'],['registrationExpiry','انتهاء السنوية'],['department','الجهة المستفيدة'],['defaultDriver','السائق الافتراضي'],['notes','ملاحظات']],
     drivers:[['name','الاسم'],['phone','الهاتف'],['licenseNo','رقم إجازة السوق'],['licenseExpiry','انتهاء إجازة السوق'],['notes','ملاحظات']]
   };
   function buildImportCard(){
@@ -2461,7 +2760,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   function downloadImportTemplate(){
     if(!window.XLSX){ showToast('مكتبة Excel لم تُحمَّل — تحقّق من الاتصال'); return; }
     var wb = XLSX.utils.book_new(); wb.Workbook = {Views:[{RTL:true}]};
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([IMPORT_COLS.vehicles.map(function(c){ return c[1]; }), ['45821 ب','كربلاء','تويوتا','لاندكروزر',2021,'أبيض','JTM123456789','كاز',85000,'2027-03-01','2027-01-15','رئاسة الجامعة','علي حسين','']]), 'العجلات');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([IMPORT_COLS.vehicles.map(function(c){ return c[1]; }), ['45821 ب','كربلاء','تويوتا','لاندكروزر',2021,'أبيض','JTM123456789','كاز',85000,'2027-03-01','رئاسة الجامعة','علي حسين','']]), 'العجلات');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([IMPORT_COLS.drivers.map(function(c){ return c[1]; }), ['علي حسين','07801234567','123456','2028-05-01','']]), 'السائقون');
     XLSX.writeFile(wb, 'ameed-vehicles-import-template.xlsx');
   }
@@ -2533,7 +2832,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     });
     vehicles.forEach(function(v){
       ops.push([db.collection('vehicles').doc(), stamp({plate:v.plate, province:v.province, make:v.make, model:v.model, year:v.year ? Number(v.year) || v.year : '', color:v.color, chassis:v.chassis,
-        fuelType:v.fuelType, odometer:num(v.odometer), registrationExpiry:v.registrationExpiry, insuranceExpiry:v.insuranceExpiry, department:v.department,
+        fuelType:v.fuelType, odometer:num(v.odometer), registrationExpiry:v.registrationExpiry, department:v.department,
         defaultDriverId:nameToId[normName(v.defaultDriver)] || '', notes:v.notes, status:'active', imported:true})]);
     });
     audit('import.excel', 'vehicles', '', drivers.length+' سائق، '+vehicles.length+' عجلة');
@@ -2558,6 +2857,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   var DEMO_USERS = [
     {username:'admin', name:'مشتاق كريم', role:'admin'},
     {username:'fleet', name:'مدير الآليات (تجريبي)', role:'fleet'},
+    {username:'supervisor', name:'مدير قسم الخدمات (تجريبي)', role:'supervisor'},
     {username:'gate', name:'موظف الاستعلامات (تجريبي)', role:'gate', locations:['gate-main']},
     {username:'finance', name:'موظف المالية (تجريبي)', role:'finance'},
     {username:'driver', name:'علي حسين', role:'driver', driverKey:0},
@@ -2573,7 +2873,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     var names = ['علي حسين','حيدر كاظم','محمد جاسم','عباس فاضل','أحمد ستار','حسن عبد الأمير'];
     var drivers = names.map(function(n, i){
       var exp = new Date(); exp.setDate(exp.getDate() + (i === 3 ? 20 : 400 + i*60));
-      return Object.assign({id:'demo-drv-'+i, name:n, phone:'0780'+(1000000+i*123457).toString().slice(0,7), licenseNo:String(300100+i*17), licenseExpiry:fmtISODate(exp), active:true, createdAt:nowISO()}, stamp0);
+      return Object.assign({id:'demo-drv-'+i, name:n, phone:'0780'+(1000000+i*123457).toString().slice(0,7), licenseNo:String(300100+i*17), licenseExpiry:fmtISODate(exp), address:['كربلاء — حي الحسين','كربلاء — حي العباس','كربلاء — حي الموظفين','الهندية','كربلاء — حي النقيب','عين التمر'][i], supervisorId:i % 2 ? 'u_supervisor' : '', active:true, createdAt:nowISO()}, stamp0);
     });
     var specs = [
       ['45821 ب','تويوتا','لاندكروزر',2021,'أبيض','diesel','رئاسة الجامعة',0,7.5],
@@ -2590,10 +2890,9 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     specs.forEach(function(s, i){
       var id = 'demo-veh-'+i;
       var reg = new Date(); reg.setDate(reg.getDate() + (i === 2 ? 12 : i === 5 ? -5 : 90 + i*37));
-      var ins = new Date(); ins.setDate(ins.getDate() + (i === 6 ? 25 : 150 + i*21));
       var odo = 40000 + i*13750;
       vehicles.push(Object.assign({id:id, plate:s[0], province:'كربلاء', make:s[1], model:s[2], year:s[3], color:s[4], chassis:'JT'+(700000+i*4311), fuelType:s[5],
-        odometer:odo, lastOilChangeKm:odo - (i === 1 ? 5600 : 1500), registrationExpiry:fmtISODate(reg), insuranceExpiry:fmtISODate(ins),
+        odometer:odo, lastOilChangeKm:odo - (i === 1 ? 5600 : 1500), registrationExpiry:fmtISODate(reg),
         status:i === 4 ? 'maintenance' : 'active', department:s[6], defaultDriverId:'demo-drv-'+s[7], notes:'', createdAt:new Date(now - 40*DAY).toISOString()}, stamp0));
       // رحلات آخر 24 يوماً
       var t = now - 24*DAY, kmpl = s[8], sinceFuel = 0, lastDir = 'in', lastAt = 0;
@@ -2648,20 +2947,43 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       requests.push(r);
     }
     var F = ['u_fleet','مدير الآليات (تجريبي)'], FI = ['u_finance','موظف المالية (تجريبي)'];
-    req('demo-req-m-1','maintenance',4,'in_progress',4,{description:'صوت في ناقل الحركة وتسريب زيت', workshop:'ورشة الأمين', estCost:450000, odometer:95100},[['approved',F[0],F[1]],['in_progress',F[0],F[1]]]);
+    req('demo-req-m-1','maintenance',4,'in_progress',4,{description:'صوت في ناقل الحركة وتسريب زيت', workshop:GARAGE, estCost:450000, odometer:95100},[['approved',F[0],F[1]],['in_progress',F[0],F[1]]]);
     req('demo-req-m-2','maintenance',1,'new',1,{description:'تبديل دهن وفلاتر — تجاوزت موعد التبديل', estCost:85000},[]);
-    req('demo-req-m-3','maintenance',2,'done',18,{description:'تبديل بطارية', workshop:'مركز الكهرباء', estCost:120000, actualCost:115000},[['approved',F[0],F[1]],['in_progress',F[0],F[1]],['awaiting_finance',F[0],F[1]],['done',FI[0],FI[1],'تأييد المالية']]);
-    req('demo-req-m-4','maintenance',5,'awaiting_finance',6,{description:'تصليح مكيف الهواء', workshop:'ورشة التبريد', estCost:200000, actualCost:175000},[['approved',F[0],F[1]],['in_progress',F[0],F[1]],['awaiting_finance',F[0],F[1]]]);
+    req('demo-req-m-3','maintenance',2,'done',18,{description:'تبديل بطارية', workshop:'خارجي — مركز الكهرباء', estCost:120000, actualCost:115000},[['approved',F[0],F[1]],['in_progress',F[0],F[1]],['awaiting_finance',F[0],F[1]],['done',FI[0],FI[1],'تأييد المالية']]);
+    req('demo-req-m-4','maintenance',5,'awaiting_finance',6,{description:'تصليح مكيف الهواء', workshop:GARAGE, estCost:200000, actualCost:175000},[['approved',F[0],F[1]],['in_progress',F[0],F[1]],['awaiting_finance',F[0],F[1]]]);
     req('demo-req-m-5','maintenance',6,'rejected',9,{description:'طلاء الباب الخلفي', estCost:300000, rejectReason:'ليس ضمن الأولويات هذا الشهر', rejectedBy:F[1]},[['rejected',F[0],F[1],'ليس ضمن الأولويات هذا الشهر']]);
-    req('demo-req-m-6','maintenance',0,'done',12,{description:'تبديل إطارات أمامية', workshop:'إطارات الفرات', estCost:600000, actualCost:640000},[['approved',F[0],F[1]],['in_progress',F[0],F[1]],['awaiting_finance',F[0],F[1]],['done',FI[0],FI[1],'تأييد المالية']]);
-    req('demo-req-w-1','wash',0,'done',3,{kind:'both', place:'مغسل الجامعة', cost:0},[['done',F[0],F[1],'أُنجز الغسل']]);
-    req('demo-req-w-2','wash',3,'new',0.3,{kind:'wash', place:''},[]);
-    req('demo-req-w-3','wash',7,'awaiting_finance',2,{kind:'clean', place:'مغسل الفرات', cost:15000},[['awaiting_finance',F[0],F[1],'أُنجز الغسل — بانتظار المالية']]);
-    req('demo-req-w-4','wash',2,'done',10,{kind:'both', place:'مغسل الفرات', cost:20000},[['awaiting_finance',F[0],F[1]],['done',FI[0],FI[1],'تأييد المالية']]);
-    var mk = monthKey(new Date());
-    points.push(Object.assign({id:'demo-pts-1', driverId:'demo-drv-1', month:mk, kind:'manual', delta:-10, category:'violation', reason:'مخالفة سرعة (تجريبي)', by:who('u_fleet'), byName:F[1], at:new Date(now - 5*DAY).toISOString()}, stamp0));
-    points.push(Object.assign({id:'demo-pts-2', driverId:'demo-drv-2', month:mk, kind:'manual', delta:5, category:'excellence', reason:'التزام متميز بالمواعيد (تجريبي)', by:who('u_fleet'), byName:F[1], at:new Date(now - 3*DAY).toISOString()}, stamp0));
-    [5,3,4,4,5,3].forEach(function(n, i){ points.push(Object.assign({id:'demo-stars-'+i, driverId:'demo-drv-'+i, month:mk, kind:'stars', stars:n, reason:'', by:who('u_fleet'), byName:F[1], at:new Date(now - DAY).toISOString()}, stamp0)); });
+    req('demo-req-m-6','maintenance',0,'done',12,{description:'تبديل إطارات أمامية', workshop:'خارجي — إطارات الفرات', estCost:600000, actualCost:640000},[['approved',F[0],F[1]],['in_progress',F[0],F[1]],['awaiting_finance',F[0],F[1]],['done',FI[0],FI[1],'تأييد المالية']]);
+    req('demo-req-w-1','wash',0,'done',3,{kind:'both', place:GARAGE, cost:0},[['done',F[0],F[1],'أُنجز الغسل']]);
+    req('demo-req-w-2','wash',3,'new',0.3,{kind:'wash', place:GARAGE},[]);
+    req('demo-req-w-3','wash',7,'awaiting_finance',2,{kind:'clean', place:'خارجي', cost:15000},[['awaiting_finance',F[0],F[1],'أُنجز الغسل — بانتظار المالية']]);
+    req('demo-req-w-4','wash',2,'done',10,{kind:'both', place:'خارجي', cost:20000},[['awaiting_finance',F[0],F[1]],['done',FI[0],FI[1],'تأييد المالية']]);
+    // النقاط السنوية: شكر وتقدير وعقوبات للسنة الحالية والسابقة
+    var cy = new Date().getFullYear(), py = cy - 1, S1 = ['u_supervisor','مدير قسم الخدمات (تجريبي)'];
+    function pt(id, di, year, daysAgo, cat, delta, reason, ref, by){
+      var at = year === cy ? new Date(now - daysAgo*DAY) : new Date(py, 5 + (daysAgo % 6), 10 + (daysAgo % 15), 12);
+      points.push(Object.assign({id:id, driverId:'demo-drv-'+di, year:String(year), kind:'manual', category:cat, delta:delta, reason:reason, refNo:ref || '', by:who(by[0]), byName:by[1], at:at.toISOString()}, stamp0));
+    }
+    var Fb = [F[0], F[1]];
+    pt('demo-pts-1', 0, cy, 40, 'thanks', 10, 'التزام متميز بمواعيد النقل (تجريبي)', '512 في '+cy+'/08/15', Fb);
+    pt('demo-pts-2', 0, cy, 12, 'thanks', 5, 'المحافظة على نظافة العجلة (تجريبي)', '', S1);
+    pt('demo-pts-3', 1, cy, 20, 'penalty', -10, 'مخالفة سرعة مسجلة (تجريبي)', '633 في '+cy+'/09/01', Fb);
+    pt('demo-pts-4', 1, cy, 60, 'thanks', 5, 'مساعدة في نقل وفد (تجريبي)', '', S1);
+    pt('demo-pts-5', 2, cy, 30, 'thanks', 15, 'إنجاز مهمة رسمية طارئة ليلاً (تجريبي)', '401 في '+cy+'/08/20', Fb);
+    pt('demo-pts-6', 3, cy, 8, 'penalty', -5, 'تأخر في إرجاع العجلة دون إشعار (تجريبي)', '', S1);
+    pt('demo-pts-7', 3, cy, 70, 'thanks', 10, 'التزام متميز (تجريبي)', '', Fb);
+    pt('demo-pts-8', 4, cy, 25, 'thanks', 5, 'حسن التعامل مع الطلبة (تجريبي)', '', Fb);
+    pt('demo-pts-9', 5, cy, 15, 'penalty', -15, 'حادث بسيط بسبب الإهمال (تجريبي)', '702 في '+cy+'/09/10', Fb);
+    pt('demo-pts-10', 5, cy, 50, 'thanks', 5, 'التزام بالدوام (تجريبي)', '', S1);
+    pt('demo-pts-11', 0, py, 3, 'thanks', 20, 'شكر وتقدير من رئاسة الجامعة (تجريبي)', '1180 في '+py+'/12/01', Fb);
+    pt('demo-pts-12', 1, py, 4, 'penalty', -5, 'مخالفة (تجريبي)', '', Fb);
+    pt('demo-pts-13', 2, py, 5, 'thanks', 10, 'التزام متميز (تجريبي)', '', Fb);
+    [5,3,4,4,5,3].forEach(function(n, i){ points.push(Object.assign({id:'demo-stars-'+i, driverId:'demo-drv-'+i, year:String(cy), kind:'stars', stars:n, reason:'', by:who('u_fleet'), byName:F[1], at:new Date(now - DAY).toISOString()}, stamp0)); });
+    // طلب تأخير ينتظر الموافقة، وطلب مساعدة قيد التعامل
+    var until = new Date(now + 4*3600000).toISOString();
+    requests.push(Object.assign({id:'demo-req-d-1', type:'delay', vehicleId:'demo-veh-3', driverId:'demo-drv-3', driverName:names[3], status:'new', untilAt:until, reason:'ازدحام شديد وإغلاق طريق بغداد (تجريبي)',
+      history:[{status:'new', at:new Date(now - 30*60000).toISOString(), by:'u_driver', byName:names[3], note:''}], createdAt:new Date(now - 30*60000).toISOString()}, stamp0));
+    requests.push(Object.assign({id:'demo-req-a-1', type:'assist', vehicleId:'demo-veh-6', driverId:'demo-drv-0', driverName:names[0], status:'in_progress', description:'عطل في البطارية والعجلة لا تعمل (تجريبي)', location:'طريق كربلاء–الحلة قرب السيطرة', phone:'07801000000',
+      history:[{status:'new', at:new Date(now - 2*3600000).toISOString(), by:'u_driver', byName:names[0], note:''},{status:'in_progress', at:new Date(now - 90*60000).toISOString(), by:'u_fleet', byName:F[1], note:'أُرسلت عجلة إسناد'}], createdAt:new Date(now - 2*3600000).toISOString()}, stamp0));
     requests.forEach(function(r){ Object.keys(r).forEach(function(k){ if(r[k] === undefined) delete r[k]; }); });
     return {drivers:drivers, vehicles:vehicles, movements:movements, requests:requests, driverPoints:points};
   }
