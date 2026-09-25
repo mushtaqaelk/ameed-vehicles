@@ -41,7 +41,11 @@ service cloud.firestore {
 
     match /drivers/{id} {
       allow read: if active();
-      allow create, update: if hasRole(['admin', 'fleet']);
+      allow create: if hasRole(['admin', 'fleet']);
+      // السائق يعدّل بياناته البسيطة فقط (الهاتف والعنوان والصورة)، ولا يعدّل اسمه.
+      allow update: if hasRole(['admin', 'fleet'])
+        || (hasRole(['driver']) && me().driverId == id
+            && onlyKeys(['phone', 'address', 'photoId', 'updatedAt']));
       allow delete: if hasRole(['admin']);
     }
 
@@ -60,7 +64,7 @@ service cloud.firestore {
     match /requests/{id} {
       allow read: if active();
       allow create: if request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.type in ['fuel', 'maintenance', 'wash']
+        && request.resource.data.type in ['fuel', 'maintenance', 'wash', 'delay', 'assist']
         && (hasRole(['admin', 'fleet'])
             || (hasRole(['driver'])
                 && request.resource.data.driverId == me().driverId
@@ -81,10 +85,13 @@ service cloud.firestore {
       allow update, delete: if hasRole(['admin']);
     }
 
-    // نقاط السائقين وتقييمهم
+    // نقاط السائقين (سنوية) وتقييمهم: مدير الآليات لكل السائقين، ومدير القسم للسائقين التابعين له.
     match /driverPoints/{id} {
       allow read: if active();
-      allow create: if hasRole(['admin', 'fleet']) && request.resource.data.by == request.auth.uid;
+      allow create: if request.resource.data.by == request.auth.uid
+        && (hasRole(['admin', 'fleet'])
+            || (hasRole(['supervisor'])
+                && get(/databases/$(database)/documents/drivers/$(request.resource.data.driverId)).data.supervisorId == request.auth.uid));
       allow update, delete: if hasRole(['admin']);
     }
 
