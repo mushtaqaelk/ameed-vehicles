@@ -3,7 +3,7 @@
 > اقرأ هذا الملف أولاً في أي جلسة جديدة، من أي جهاز. فيه كل ما يلزم لإكمال العمل دون الرجوع إلى المحادثات السابقة.
 > المالك: مشتاق كريم — مساعد رئيس الجامعة للشؤون الإدارية والقانونية، جامعة العميد، كربلاء. يتواصل بالعربية.
 
-## الحالة الحالية (آخر تحديث: 2026-09-25)
+## الحالة الحالية (آخر تحديث: 2026-10-04)
 - النظام **يعمل على الإنتاج**: https://mushtaqaelk.github.io/ameed-vehicles/
 - قاعدة البيانات: Firebase، والمشروع `ameed-vehicles` على الخطة المجانية Spark. قاعدة Firestore هي `(default)` في `eur3`، وتسجيل الدخول بـ Email/Password.
 - `firebaseConfig` موجود داخل `index.html`. مفتاح الويب ليس سرّاً، فالحماية بقواعد `firestore.rules`.
@@ -34,6 +34,11 @@
 
 ## الأدوار
 `admin` مدير النظام · `fleet` مدير الآليات · `supervisor` مدير القسم (يضيف النقاط لسائقي قسمه فقط، والربط عبر `drivers.supervisorId`) · `gate` الاستعلامات (في مواقعه فقط) · `finance` المالية · `driver` سائق (يُربط بسجله عبر `users.driverId`) · `viewer` الإدارة العليا (عرض فقط).
+
+قيود متفق عليها (المرحلة 3):
+- تسجيل الدخول والخروج للعجلات من صلاحية `gate` **حصراً** (`canRecordMovement`)، وتقديم الطلبات من صلاحية `driver` **حصراً** (`canCreateRequest`)، في الواجهة وفي `firestore.rules`. الاستثناء الوحيد في القواعد: مدير النظام يكتب حركات وطلبات `demo:true` من زر البيانات التجريبية.
+- `gate` و`finance` يعملان بصفحة واحدة (`tabsForRole` يعيد تبويباً واحداً، فيُخفى شريط التبويبات)، وفي أعلى كل منهما `clockCard()`. صفحة `gate` فيها تقرير الحركة اليومية (`dailyMovementsSpec`، اليوم افتراضياً، ضمن مواقع الموظف).
+- السائق لا يطبع التقارير ولا يصدّرها: `renderReport` لا يضيف الأزرار له، وصنف `body.no-print-role` يخفي التقرير في الطباعة.
 
 ## نموذج البيانات (Firestore)
 `config/general` (المواقع والإعدادات) · `users/{uid}` · `vehicles` · `drivers` (فيها phone وaddress وphotoId وsupervisorId) · `movements` (خروج ودخول) · `requests` (أنواعها: fuel|maintenance|wash|delay|assist) · `driverPoints` (kind: manual|stars، وcategory: thanks|penalty|other، مع year وdelta) · `attachments` (صور مضغوطة نحو 150KB كنص base64) · `audit` (إضافة فقط).
@@ -70,4 +75,5 @@ https://console.cloud.google.com/firestore/databases/-default-/security/rules?pr
 
 ## سجل المراحل
 - **المرحلة 1** ([#1](https://github.com/mushtaqaelk/ameed-vehicles/pull/1)): النظام الكامل (الأدوار، والجدول الآني، والحركة، والوقود والصيانة والغسل مع دورة الموافقة، والتقارير، وExcel، وPWA) مع الربط بـ Firebase.
+- **المرحلة 3** (فرع `claude/role-restrictions`): الاستعلامات والمالية بصفحة واحدة مع مربع الساعة؛ تقرير الحركة اليومية للاستعلامات؛ السائق بلا طباعة أو Excel؛ الحركة للاستعلامات حصراً والطلبات للسائق حصراً.
 - **المرحلة 2** ([#2](https://github.com/mushtaqaelk/ameed-vehicles/pull/2)): إلغاء التأمين؛ الورشة ومكان الغسل صارا كراج العتبة أو خارجي؛ النقاط سنوية تبدأ من صفر وتُدار يدوياً (شكر أو عقوبة بعدّاد)؛ ملف السائق مع تقرير كل السنوات؛ دور مدير القسم؛ تبويب "ملفي" للسائق مع طلب التأخير وطلب المساعدة.

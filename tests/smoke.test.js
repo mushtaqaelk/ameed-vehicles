@@ -43,10 +43,12 @@ async function login(page, username) {
   }
   await page.waitForSelector(`[data-demo-user="${username}"]`);
   await page.click(`[data-demo-user="${username}"]`);
-  await page.waitForSelector('#tabs:not([hidden])');
+  // الاستعلامات والمالية بلا شريط تبويبات، فننتظر ظهور لوحة التطبيق بدلاً منه
+  await page.waitForFunction((u) => { const S = window.__ameedVehicles && window.__ameedVehicles.S; return S && S.profile && S.profile.username === u && document.querySelector('#main section.panel'); }, username);
   await page.waitForTimeout(150);
 }
 async function tabNames(page) {
+  if (await page.$eval('#tabs', (t) => t.hidden)) return ['single:' + (await page.$eval('#main section.panel', (p) => p.id.replace('panel-', '')))];
   return page.$$eval('#tabs .tab', (els) => els.map((e) => e.dataset.tab));
 }
 async function goTab(page, t) {
@@ -93,11 +95,11 @@ async function submitModal(page) {
 
   console.log('\n[2] التبويبات حسب الدور');
   const expected = {
-    admin: ['home', 'gate', 'requests', 'vehicles', 'drivers', 'finance', 'reports', 'admin'],
-    fleet: ['home', 'gate', 'requests', 'vehicles', 'drivers', 'reports'],
+    admin: ['home', 'requests', 'vehicles', 'drivers', 'finance', 'reports', 'admin'],
+    fleet: ['home', 'requests', 'vehicles', 'drivers', 'reports'],
     supervisor: ['home', 'drivers'],
-    gate: ['home', 'gate'],
-    finance: ['home', 'requests', 'finance', 'reports'],
+    gate: ['single:gate'],
+    finance: ['single:finance'],
     driver: ['home', 'requests', 'me'],
     viewer: ['home', 'vehicles', 'drivers', 'finance', 'reports'],
   };
@@ -124,9 +126,15 @@ async function submitModal(page) {
   check(!/التأمين/.test(alertText), 'لا تنبيهات للتأمين');
   check(/طلب مساعدة/.test(alertText) && /طلب تأخير/.test(alertText), 'تنبيهات طلب المساعدة وطلب التأخير');
 
-  console.log('\n[4] الاستعلامات: تسجيل خروج ودخول في موقعه فقط');
+  console.log('\n[3ب] مدير الآليات: لا تسجيل حركة ولا تقديم طلبات');
+  await login(page, 'fleet');
+  check(!(await page.$('[data-move]')), 'مدير الآليات لا يسجّل الدخول والخروج');
+  await goTab(page, 'requests');
+  check(!(await page.$('[data-new-request]')), 'مدير الآليات لا يقدّم طلبات');
+
+  console.log('\n[4] الاستعلامات: صفحة واحدة، تسجيل خروج ودخول في موقعه فقط، والتقرير اليومي');
   await login(page, 'gate');
-  await goTab(page, 'gate');
+  check(await page.isVisible('#panel-gate .clock-time'), 'مربع الساعة ظاهر');
   await page.click('#gateOutBtn');
   const locOptions = await page.$$eval('.modal [name="locationId"] option', (o) => o.map((x) => x.value));
   check(JSON.stringify(locOptions) === '["gate-main"]', `موظف الاستعلامات يرى موقعه فقط: ${locOptions}`);
@@ -147,14 +155,20 @@ async function submitModal(page) {
   check(live === 'out', 'العجلة أصبحت خارج الجامعة');
   const mv = await page.evaluate((v) => window.__ameedVehicles.S.movements.filter((m) => m.vehicleId === v).sort((a, b) => b.at.localeCompare(a.at))[0], inVehicle);
   check(mv.driverName === 'سائق من خارج القائمة' && !mv.driverId && mv.by === 'u_gate', 'سائق خارج القائمة + اسم المسجِّل محفوظ');
-  await goTab(page, 'home');
-  await page.click(`#panel-home [data-move="${inVehicle}"]`);
-  await page.waitForSelector('.modal');
+  await page.click('#gateOutBtn');
+  await page.selectOption('.modal [name="vehicleId"]', inVehicle);
+  await page.waitForTimeout(50);
   check((await page.inputValue('.modal [name="direction"]')) === 'in', 'الاتجاه المقترح: دخول');
   await submitModal(page);
   live = await page.evaluate((v) => window.__ameedVehicles.derived().live[v].where, inVehicle);
-  check(live === 'in', 'سُجّل الدخول من بطاقة العجلة');
-  await goTab(page, 'gate');
+  check(live === 'in', 'سُجّل الدخول');
+  const todayISO = await page.evaluate(() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); });
+  check((await page.inputValue('#dailyReportDate')) === todayISO, 'تاريخ التقرير اليومي = اليوم افتراضياً');
+  await page.click('#dailyReportBtn');
+  await page.waitForSelector('#panel-gate #printableReport');
+  const dailyRows = await page.$$eval('#printableReport tbody tr', (r) => r.length);
+  check(dailyRows >= 2 && /تقرير الحركة اليومية/.test(await page.textContent('#printableReport .report-title')), 'التقرير اليومي يعرض حركتي اليوم: ' + dailyRows);
+  check(!!(await page.$('#printReportBtn')), 'التقرير اليومي قابل للطباعة');
   await page.screenshot({ path: path.join(SHOTS, '03-gate-mobile.png'), fullPage: true });
 
   console.log('\n[5] السائق: طلب وقود مع صورة وصل');
@@ -211,6 +225,13 @@ async function submitModal(page) {
   const alertsMine = await page.evaluate(() => window.__ameedVehicles.S.requests.filter((r) => r.driverId === 'demo-drv-0' && /اختبار/.test(r.reason || r.description || '') && (r.type === 'delay' || r.type === 'assist')).map((r) => r.type).sort());
   check(JSON.stringify(alertsMine) === '["assist","delay"]', 'أُرسل طلب التأخير وطلب المساعدة');
   await page.screenshot({ path: path.join(SHOTS, '04b-driver-me-mobile.png'), fullPage: true });
+  const fullBtn = page.locator('#panel-me button', { hasText: 'التقرير الكامل' });
+  if (await fullBtn.count()) {
+    await fullBtn.first().click();
+    await page.waitForSelector('.modal #printableReport');
+    check(!(await page.$('#printReportBtn')) && !(await page.$('#excelReportBtn')), 'السائق: التقرير بلا طباعة ولا تصدير Excel');
+    await page.click('.modal-head button');
+  }
   await page.screenshot({ path: path.join(SHOTS, '04-driver-home-mobile.png'), fullPage: true });
 
   console.log('\n[6] مدير الآليات: الموافقة ودورة الصيانة');
@@ -315,7 +336,7 @@ async function submitModal(page) {
 
   console.log('\n[8] المالية: التأييد');
   await login(page, 'finance');
-  await goTab(page, 'requests');
+  check(await page.isVisible('#panel-finance .clock-time'), 'المالية: صفحة واحدة مع مربع الساعة');
   await page.click(`[data-request="${myReq.id}"] [data-action="finance-approve"]`);
   await page.click('.modal .btn-primary');
   await page.waitForTimeout(250);
@@ -323,7 +344,6 @@ async function submitModal(page) {
   check(fin.status === 'done' && fin.financeApprovedAmount === 26000, 'طلب الوقود منجز بعد تأييد المالية');
   const hasFleetBtn = await page.$(`[data-request] [data-action="approve"]`);
   check(!hasFleetBtn, 'المالية لا ترى أزرار موافقة مدير الآليات');
-  await goTab(page, 'finance');
   await page.waitForSelector('#printableReport');
   await page.screenshot({ path: path.join(SHOTS, '07-finance-mobile.png'), fullPage: true });
 
@@ -361,8 +381,8 @@ async function submitModal(page) {
   await page.fill('#loginUser', 'test.gate');
   await page.fill('#loginPass', 'secret123');
   await page.click('.login-wrap button[type=submit]');
-  await page.waitForSelector('#tabs:not([hidden])');
-  check(JSON.stringify(await tabNames(page)) === '["home","gate"]', 'الحساب الجديد يدخل بدور الاستعلامات');
+  await page.waitForSelector('#panel-gate');
+  check(JSON.stringify(await tabNames(page)) === '["single:gate"]', 'الحساب الجديد يدخل بدور الاستعلامات');
   await page.click('#logoutBtn');
   await page.fill('#loginUser', 'test.gate');
   await page.fill('#loginPass', 'wrong-pass');
