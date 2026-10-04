@@ -181,6 +181,9 @@ hr.sep{border:none; border-top:1px solid var(--border); margin:2px 0; width:100%
 
 /* ---------- stats ---------- */
 .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px;}
+.clock-card{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+.clock-time{font-size:32px; font-weight:900; font-variant-numeric:tabular-nums; color:var(--accent-strong); direction:ltr; unicode-bidi:isolate;}
+.clock-date{font-size:14.5px; color:var(--ink-soft); margin-top:2px;}
 .stat-tile{
   background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
   padding:14px 16px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:4px;
@@ -400,6 +403,8 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   body *{ visibility:hidden; }
   #printableReport, #printableReport *{ visibility:visible; }
   #printableReport{ position:absolute; inset-inline-start:0; top:0; width:100%; border:none !important; box-shadow:none !important; }
+  /* السائق لا يطبع التقارير (حتى من قائمة المتصفح مباشرة) */
+  body.no-print-role #printableReport, body.no-print-role #printableReport *{ visibility:hidden !important; }
   .no-print{ display:none !important; }
   .report-univ, .report-title, .stat-num{ color:#000 !important; }
   .stat-box{ background:#fff !important; border:1px solid #999 !important; }
@@ -512,6 +517,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   var WASH_KIND = {wash:'غسل خارجي', clean:'تنظيف داخلي', both:'غسل وتنظيف'};
   var GARAGE = 'كراج العتبة';
   var MONTH_AR = ['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
+  var WEEKDAY_AR = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
 
   /* ---------------- DOM helpers ---------------- */
   function $(id){ return document.getElementById(id); }
@@ -738,19 +744,21 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   function isAdmin(){ return role() === 'admin'; }
   function isFleet(){ return role() === 'admin' || role() === 'fleet'; }
   function isFinance(){ return role() === 'admin' || role() === 'finance'; }
-  function canRecordMovement(){ return ['admin','fleet','gate'].indexOf(role()) >= 0; }
-  function canCreateRequest(){ return ['admin','fleet','driver'].indexOf(role()) >= 0; }
+  /* تسجيل الدخول والخروج من صلاحية الاستعلامات حصراً، وتقديم الطلبات من صلاحية السائق حصراً */
+  function canRecordMovement(){ return role() === 'gate'; }
+  function canCreateRequest(){ return role() === 'driver'; }
   function allowedLocations(){
     if(role() === 'gate') return locations().filter(function(l){ return (S.profile.locations||[]).indexOf(l.id) >= 0; });
     return locations();
   }
   function tabsForRole(){
     var all = {
-      admin:['home','gate','requests','vehicles','drivers','finance','reports','admin'],
-      fleet:['home','gate','requests','vehicles','drivers','reports'],
+      admin:['home','requests','vehicles','drivers','finance','reports','admin'],
+      fleet:['home','requests','vehicles','drivers','reports'],
       supervisor:['home','drivers'],
-      gate:['home','gate'],
-      finance:['home','requests','finance','reports'],
+      // الاستعلامات والمالية: صفحة واحدة بلا شريط تبويبات
+      gate:['gate'],
+      finance:['finance'],
       driver:['home','requests','me'],
       viewer:['home','vehicles','drivers','finance','reports']
     };
@@ -1243,6 +1251,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     else want = 'app';
 
     $('logoutBtn').hidden = !S.authUser;
+    document.body.classList.toggle('no-print-role', !!S.profile && S.profile.role === 'driver');
     $('roleLabel').textContent = S.profile ? (ROLE_LABEL[S.profile.role] || S.profile.role) + ' — ' + S.profile.name : 'غير مسجّل';
 
     if(want !== 'app'){
@@ -1275,7 +1284,9 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     PANELS[S.tab].refresh();
   }
   function renderTabs(tabs){
-    var nav = $('tabs'); nav.hidden = false; clear(nav);
+    var nav = $('tabs'); clear(nav);
+    nav.hidden = tabs.length < 2;
+    if(nav.hidden) return;
     var pend = pendingCountForMe();
     tabs.forEach(function(t){
       var count = t === 'requests' ? pend : t === 'finance' && isFinance() ? S.requests.filter(function(r){ return r.status === 'awaiting_finance'; }).length : 0;
@@ -1525,9 +1536,26 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
         ])
       ]);
       this.list = el('div',{class:'card'});
-      appendKids(root, [head, this.list]);
+      // تقرير الحركة اليومية: اليوم المختار (اليوم الحالي افتراضياً)، ضمن مواقع الموظف فقط
+      var self = this;
+      this.reportDay = el('input',{id:'dailyReportDate', class:'input', type:'date', value:fmtISODate(new Date()), max:fmtISODate(new Date()), style:{maxWidth:'200px'}});
+      this.reportBox = el('div',{hidden:true});
+      var reportCard = el('div',{class:'card no-print'},[
+        el('h2',{text:'تقرير الحركة اليومية'}),
+        el('p',{class:'muted', text:'اختر اليوم ثم اعرض التقرير واطبعه. يشمل حركات مواقعك فقط.'}),
+        el('div',{class:'row'},[this.reportDay, el('button',{class:'btn btn-primary', type:'button', id:'dailyReportBtn', text:'عرض التقرير', onclick:function(){
+          if(!self.reportDay.value){ showToast('اختر اليوم'); return; }
+          self.reportShown = true; self.showReport();
+          self.reportBox.scrollIntoView({behavior:'smooth', block:'start'});
+        }})])
+      ]);
+      appendKids(root, [clockCard(), head, this.list, reportCard, this.reportBox]);
+    },
+    showReport:function(){
+      renderReport(dailyMovementsSpec(this.reportDay.value, allowedLocations().map(function(l){ return l.id; })), this.reportBox);
     },
     refresh:function(){
+      if(this.reportShown && this.reportDay.value) this.showReport(); // يبقى التقرير محدَّثاً عند تسجيل حركة جديدة
       clear(this.list);
       var locIds = allowedLocations().map(function(l){ return l.id; });
       var since = Date.now() - 48*3600000;
@@ -2329,7 +2357,8 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     opts = opts || {};
     clear(container);
     var sheet = el('div',{class:'card report-sheet', id:'printableReport'});
-    sheet.appendChild(el('div',{class:'row no-print', id:'reportPrintRow'},[
+    // السائق يعرض التقرير فقط، دون طباعة أو تصدير Excel
+    if(role() !== 'driver') sheet.appendChild(el('div',{class:'row no-print', id:'reportPrintRow'},[
       el('button',{class:'btn btn-primary', type:'button', id:'printReportBtn', text:'🖨 طباعة', onclick:function(){
         // تقرير داخل نافذة منبثقة: تُخفى الصفحة خلفها أثناء الطباعة حتى لا تُطبع صفحات فارغة
         var others = Array.prototype.filter.call(document.querySelectorAll('#printableReport'), function(o){ return o !== sheet; });
@@ -2352,7 +2381,8 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       sheet.appendChild(tableNode(sec.headers, sec.rows.map(function(r){ return r.map(cellText); }), {foot:sec.foot ? sec.foot.map(cellText) : null}));
     });
     sheet.appendChild(el('div',{class:'faint', text:'أُعدّ بتاريخ '+fmtDT(new Date())+' بواسطة '+(S.profile ? S.profile.name : '')}));
-    sheet.appendChild(el('div',{class:'report-sign'},[el('div',{text:'مدير الآليات'}), el('div',{text:'المالية'}), el('div',{text:'مساعد رئيس الجامعة للشؤون الإدارية'})]));
+    var signs = spec.signs || ['مدير الآليات', 'المالية', 'مساعد رئيس الجامعة للشؤون الإدارية'];
+    sheet.appendChild(el('div',{class:'report-sign'}, signs.map(function(s){ return el('div',{text:s}); })));
     container.appendChild(sheet);
     container.hidden = false;
   }
@@ -2506,16 +2536,42 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       ]
     };
   }
+  /* loc: معرّف موقع واحد، أو مصفوفة مواقع (مواقع موظف الاستعلامات)، أو فارغ لكل المواقع */
   function movementsReportSpec(from, to, loc){
-    var movs = S.movements.filter(function(m){ return inRange(m.at, from, to) && (!loc || m.locationId === loc); }).sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); });
+    var locs = !loc ? null : Array.isArray(loc) ? loc : [loc];
+    var movs = S.movements.filter(function(m){ return inRange(m.at, from, to) && (!locs || locs.indexOf(m.locationId) >= 0); }).sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); });
     var vs = {}; movs.forEach(function(m){ vs[m.vehicleId] = 1; });
     return {
       title:'سجل حركة العجلات', fileName:'movements-log',
-      meta:[['الفترة', fmtDate(from)+' إلى '+fmtDate(to)], ['الموقع', loc ? locationName(loc) : 'جميع المواقع']],
+      meta:[['الفترة', fmtDate(from)+' إلى '+fmtDate(to)], ['الموقع', locs ? locs.map(locationName).join('، ') : 'جميع المواقع']],
       stats:[{label:'مجموع الحركات', value:cNum(movs.length), total:true}, {label:'خروج', value:cNum(movs.filter(function(m){ return m.direction === 'out'; }).length)}, {label:'دخول', value:cNum(movs.filter(function(m){ return m.direction === 'in'; }).length)}, {label:'عدد العجلات', value:cNum(Object.keys(vs).length)}],
       sections:[{title:'الحركات', headers:['الوقت','الاتجاه','العجلة','السائق','الموقع','العداد','الوجهة','ملاحظة','سجّلها'],
         rows:movs.map(function(m){ return [fmtDT(m.at), m.direction === 'out' ? 'خروج' : 'دخول', vehicleLabel(vehicleById(m.vehicleId)), driverLabel(m.driverId, m.driverName), locationName(m.locationId), m.odometer ? cNum(m.odometer) : '', m.purpose, m.note, m.byName]; })}]
     };
+  }
+  /* تقرير الحركة اليومية للاستعلامات: يوم واحد (YYYY-MM-DD) ضمن مواقع الموظف فقط */
+  function dailyMovementsSpec(dayISO, locIds){
+    var p = String(dayISO).split('-');
+    var day = new Date(Number(p[0]), Number(p[1])-1, Number(p[2])); // تاريخ محلي، لا UTC
+    var spec = movementsReportSpec(day, endOfDay(new Date(day)), locIds); // endOfDay يعدّل الكائن نفسه، فنمرّر نسخة
+    spec.title = 'تقرير الحركة اليومية — '+WEEKDAY_AR[day.getDay()]+' '+stripIsolates(fmtDate(day));
+    spec.fileName = 'daily-movements-'+dayISO;
+    spec.meta[0] = ['اليوم', fmtDate(day)];
+    spec.signs = ['موظف الاستعلامات', 'مدير الآليات'];
+    return spec;
+  }
+  /* مربع الساعة (للاستعلامات والمالية): يُحدَّث كل 30 ثانية ما دام ظاهراً */
+  function clockCard(){
+    var time = el('div',{class:'clock-time'}), date = el('div',{class:'clock-date'});
+    var box = el('div',{class:'card clock-card no-print'},[el('div',{},[time, date])]);
+    function tick(){
+      var d = new Date();
+      time.textContent = pad(d.getHours())+':'+pad(d.getMinutes());
+      date.textContent = WEEKDAY_AR[d.getDay()]+'، '+d.getDate()+' '+MONTH_AR[d.getMonth()]+' '+d.getFullYear();
+    }
+    tick();
+    var timer = setInterval(function(){ if(!document.body.contains(box)) clearInterval(timer); else tick(); }, 30000);
+    return box;
   }
 
   /* ---------------- تبويب التقارير ---------------- */
@@ -2591,7 +2647,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       this.queue = el('div',{class:'card'});
       this.month = el('input',{class:'input', type:'month', value:tabState.financeMonth, style:{maxWidth:'190px'}, onchange:function(){ tabState.financeMonth = self.month.value || monthKey(new Date()); self.refresh(); }});
       this.summary = el('div');
-      appendKids(root, [this.queue, el('div',{class:'card no-print'},[el('div',{class:'row-between'},[el('h2',{text:'الملخص المالي الشهري'}), this.month])]), this.summary]);
+      appendKids(root, [role() === 'finance' ? clockCard() : null, this.queue, el('div',{class:'card no-print'},[el('div',{class:'row-between'},[el('h2',{text:'الملخص المالي الشهري'}), this.month])]), this.summary]);
     },
     refresh:function(){
       clear(this.queue);

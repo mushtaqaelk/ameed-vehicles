@@ -49,23 +49,25 @@ service cloud.firestore {
       allow delete: if hasRole(['admin']);
     }
 
-    // الحركة: الاستعلامات تسجّل في مواقعها فقط، وباسمها.
+    // الحركة: من صلاحية الاستعلامات حصراً، في مواقعها فقط وباسمها.
+    // (مدير النظام يضيف فقط حركات تجريبية demo:true من زر البيانات التجريبية)
     match /movements/{id} {
       allow read: if active();
-      allow create: if (hasRole(['admin', 'fleet'])
-          || (hasRole(['gate']) && request.resource.data.locationId in me().locations))
+      allow create: if ((hasRole(['gate']) && request.resource.data.locationId in me().locations)
+          || (hasRole(['admin']) && request.resource.data.demo == true))
         && request.resource.data.by == request.auth.uid
         && request.resource.data.direction in ['out', 'in'];
       allow update: if hasRole(['admin', 'fleet']);
       allow delete: if hasRole(['admin']);
     }
 
-    // الطلبات (وقود / صيانة / غسل)
+    // الطلبات (وقود / صيانة / غسل / تأخير / مساعدة): يقدّمها السائق حصراً.
+    // (مدير النظام يضيف فقط طلبات تجريبية demo:true)
     match /requests/{id} {
       allow read: if active();
       allow create: if request.resource.data.createdBy == request.auth.uid
         && request.resource.data.type in ['fuel', 'maintenance', 'wash', 'delay', 'assist']
-        && (hasRole(['admin', 'fleet'])
+        && ((hasRole(['admin']) && request.resource.data.demo == true)
             || (hasRole(['driver'])
                 && request.resource.data.driverId == me().driverId
                 && request.resource.data.status == 'new'));
