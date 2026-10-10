@@ -368,6 +368,28 @@ async function submitModal(page) {
   await page.waitForTimeout(200);
   const nu = await page.evaluate(() => window.__ameedVehicles.S.users.find((u) => u.username === 'test.gate'));
   check(nu && nu.role === 'gate' && nu.locations.length === 1, 'أُنشئ حساب استعلامات جديد بموقع');
+  // إنشاء جماعي من Excel: ملف يُبنى داخل الصفحة بمكتبة XLSX ثم يُمرَّر إلى حقل الملف
+  await page.evaluate(() => {
+    const loc = window.__ameedVehicles.S.config.locations[0].name;
+    const ws = XLSX.utils.aoa_to_sheet([['الاسم الكامل', 'اسم المستخدم', 'الدور', 'المواقع', 'الوجبة', 'الهاتف'],
+      ['موظف جماعي أول', 'bulk.one', 'الاستعلامات', loc, 'صباحي', '07700000001'],
+      ['موظف جماعي ثانٍ', 'bulk.two', 'المالية', '', '', ''],
+      ['اسم مكرر', 'test.gate', 'الاستعلامات', loc, '', '']]);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الحسابات');
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const dt = new DataTransfer(); dt.items.add(new File([buf], 'bulk.xlsx'));
+    const inp = document.getElementById('bulkUsersFile'); inp.files = dt.files; inp.dispatchEvent(new Event('change'));
+  });
+  await page.waitForSelector('#bulkUsersCommitBtn');
+  check(/جاهزة للإنشاء: 2 من 3/.test(await page.textContent('#bulkUsersPreview')), 'المعاينة: حسابان جديدان وتجاوز اسم المستخدم المكرر');
+  await page.click('#bulkUsersCommitBtn');
+  await page.click('.modal .btn-primary');
+  await page.waitForSelector('#bulkUsersPreview #printableReport', { timeout: 15000 });
+  const bulkRows = await page.$$eval('#bulkUsersPreview #printableReport tbody tr', (r) => r.map((x) => Array.from(x.cells).map((c) => c.textContent)));
+  check(bulkRows.length === 2 && bulkRows.every((r) => /^[a-z0-9]{8}$/.test(r[6])), 'تقرير بيانات الدخول بكلمات مرور أولية عشوائية');
+  const bu = await page.evaluate(() => window.__ameedVehicles.S.users.find((u) => u.username === 'bulk.one'));
+  check(bu && bu.role === 'gate' && bu.locations.length === 1 && bu.shift === 'صباحي', 'الحساب الجماعي بالدور والموقع والوجبة');
+  const bulkPw = bulkRows[0][6];
   await page.click('#editSettingsBtn');
   await fillModal(page, { overdueHours: 10 });
   await submitModal(page);
@@ -389,6 +411,22 @@ async function submitModal(page) {
   await page.click('.login-wrap button[type=submit]');
   await page.waitForTimeout(200);
   check(/غير صحيحة/.test(await page.textContent('.login-wrap')), 'رسالة خطأ لكلمة مرور خاطئة');
+  // الدخول بحساب أُنشئ جماعياً ثم تغيير كلمة المرور الأولية
+  await page.fill('#loginUser', 'bulk.one');
+  await page.fill('#loginPass', bulkPw);
+  await page.click('.login-wrap button[type=submit]');
+  await page.waitForSelector('#panel-gate');
+  await page.click('#changePassBtn');
+  await page.fill('.modal [name="p1"]', 'changed1');
+  await page.fill('.modal [name="p2"]', 'changed1');
+  await submitModal(page);
+  await page.click('#logoutBtn');
+  await page.fill('#loginUser', 'bulk.one');
+  await page.fill('#loginPass', 'changed1');
+  await page.click('.login-wrap button[type=submit]');
+  await page.waitForSelector('#panel-gate');
+  check(true, 'الموظف يغيّر كلمة مروره الأولية ويدخل بالجديدة');
+  await page.click('#logoutBtn');
 
   console.log('\n[11] التقارير + الطباعة');
   await login(page, 'admin');
