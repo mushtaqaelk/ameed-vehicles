@@ -453,6 +453,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     <div class="session">
       <span class="role-pill" id="rolePill"><span class="dot" id="netDot"></span><span id="roleLabel">غير مسجّل</span></span>
       <button class="btn btn-sm btn-ghost" id="themeBtn" type="button" title="تبديل المظهر">◐</button>
+      <button class="btn btn-sm btn-ghost" id="changePassBtn" type="button" hidden>🔑 كلمة المرور</button>
       <button class="btn btn-sm" id="logoutBtn" type="button" hidden>خروج</button>
     </div>
   </div>
@@ -683,7 +684,16 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
         subs.forEach(function(cb){ setTimeout(function(){ cb(current); }, 0); });
       }
       return {
-        get currentUser(){ return current; },
+        get currentUser(){
+          if(current && !current.updatePassword){
+            var me = current;
+            me.updatePassword = function(pw){
+              if(String(pw).length < 6) return Promise.reject(authErr('auth/weak-password'));
+              store.auth[me.email].password = pw; persist(); return Promise.resolve();
+            };
+          }
+          return current;
+        },
         onAuthStateChanged:function(cb){ subs.push(cb); setTimeout(function(){ cb(current); }, 0); return function(){}; },
         signInWithEmailAndPassword:function(email, pw){
           var a = store.auth[String(email).toLowerCase()];
@@ -961,6 +971,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     if(/email-already-in-use/.test(c)) return 'اسم المستخدم مستخدم مسبقاً';
     if(/weak-password/.test(c)) return 'كلمة المرور قصيرة (6 أحرف على الأقل)';
     if(/too-many-requests/.test(c)) return 'محاولات كثيرة — انتظر قليلاً ثم أعد المحاولة';
+    if(/requires-recent-login/.test(c)) return 'لأسباب أمنية: سجّل الخروج ثم ادخل مجدداً، ثم غيّر كلمة المرور فوراً';
     if(/network/i.test(c)) return 'مشكلة في الاتصال بالإنترنت';
     return c || 'خطأ غير معروف';
   }
@@ -1171,6 +1182,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     applyTheme(); updateNet();
     $('themeBtn').addEventListener('click', cycleTheme);
     $('logoutBtn').addEventListener('click', function(){ auth.signOut(); });
+    $('changePassBtn').addEventListener('click', openChangePasswordForm);
     window.addEventListener('online', updateNet);
     window.addEventListener('offline', updateNet);
 
@@ -1251,6 +1263,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     else want = 'app';
 
     $('logoutBtn').hidden = !S.authUser;
+    $('changePassBtn').hidden = !(S.authUser && S.profile && S.profile.active !== false);
     document.body.classList.toggle('no-print-role', !!S.profile && S.profile.role === 'driver');
     $('roleLabel').textContent = S.profile ? (ROLE_LABEL[S.profile.role] || S.profile.role) + ' — ' + S.profile.name : 'غير مسجّل';
 
@@ -2671,6 +2684,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
         el('p',{class:'muted', text:'لكل موظف حساب شخصي (اسم مستخدم + كلمة مرور). موظف الاستعلامات يسجّل الحركة في مواقعه المحددة فقط. حساب السائق يُربط بسجله في قائمة السائقين.'}),
         this.users
       ]));
+      root.appendChild(buildBulkUsersCard());
       root.appendChild(el('div',{class:'card'},[
         el('div',{class:'row-between'},[el('h2',{text:'المواقع والبوابات'}), el('button',{class:'btn', type:'button', id:'addLocationBtn', text:'+ إضافة موقع', onclick:function(){ openLocationForm(null); }})]),
         this.locs
@@ -2694,6 +2708,8 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
         var extra = [];
         if(u.role === 'gate') extra.push('المواقع: '+((u.locations || []).map(locationName).join('، ') || 'لا يوجد'));
         if(u.role === 'driver') extra.push('السائق: '+(u.driverId && driverById(u.driverId) ? driverById(u.driverId).name : 'غير مرتبط'));
+        if(u.shift) extra.push('الوجبة: '+u.shift);
+        if(u.phone) extra.push('الهاتف: '+u.phone);
         self.users.appendChild(el('div',{class:'item', 'data-user':u.id},[
           el('div',{class:'item-top'},[
             el('span',{class:'item-title'},[u.name, ' ', el('span',{class:'faint num', text:'@'+u.username})]),
@@ -2783,6 +2799,156 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
         audit(l ? 'location.rename' : 'location.create', 'config', 'general', val.name);
         return commit(configDoc().update({locations:list}), 'حُفظ الموقع');
       }});
+  }
+
+  /* ---------------- تغيير كلمة المرور (لكل مستخدم) ---------------- */
+  function openChangePasswordForm(){
+    formModal({title:'تغيير كلمة المرور', submitLabel:'حفظ كلمة المرور',
+      intro:'اسم المستخدم: '+(S.profile ? S.profile.username : '')+'. اختر كلمة مرور لا يعرفها غيرك (6 أحرف على الأقل).',
+      fields:[
+        {key:'p1', label:'كلمة المرور الجديدة', type:'password', required:true, autocomplete:'new-password'},
+        {key:'p2', label:'أعد كتابتها للتأكيد', type:'password', required:true, autocomplete:'new-password'}
+      ],
+      onSubmit:function(val){
+        if(val.p1.length < 6) throw 'كلمة المرور قصيرة (6 أحرف على الأقل)';
+        if(val.p1 !== val.p2) throw 'كلمتا المرور غير متطابقتين';
+        return auth.currentUser.updatePassword(val.p1).then(function(){
+          audit('user.password', 'users', S.authUser.uid, S.profile.username);
+          showToast('تم تغيير كلمة المرور');
+        });
+      }});
+  }
+
+  /* ---------------- إنشاء حسابات جماعية من Excel (مدير النظام) ----------------
+     الأعمدة: الاسم الكامل · اسم المستخدم · الدور · المواقع · الوجبة · الهاتف
+     كلمة مرور أولية عشوائية لكل حساب، تُعرض مرة واحدة في تقرير قابل للطباعة والتصدير. */
+  var BULK_USER_COLS = [['name','الاسم الكامل'],['username','اسم المستخدم'],['role','الدور'],['locations','المواقع'],['shift','الوجبة'],['phone','الهاتف']];
+  function randomPassword(){
+    var chars = 'abcdefghjkmnpqrstuvwxyz23456789', out = '', buf = new Uint32Array(8);
+    (window.crypto || window.msCrypto).getRandomValues(buf);
+    for(var i=0; i<8; i++) out += chars[buf[i] % chars.length];
+    return out;
+  }
+  function roleFromLabel(t){
+    var n = normName(t);
+    var key = ROLES.find(function(r){ return normName(ROLE_LABEL[r]) === n || r === n; });
+    if(key) return key;
+    if(n.indexOf(normName('الإدارة العليا')) === 0) return 'viewer';
+    return '';
+  }
+  function buildBulkUsersCard(){
+    var preview = el('div',{id:'bulkUsersPreview'});
+    var fileLabel = el('span',{class:'faint', text:'لم يُختر ملف بعد'});
+    var fileInput = el('input',{type:'file', id:'bulkUsersFile', accept:'.xlsx,.xls,.csv', style:{display:'none'}, onchange:function(){
+      var f = fileInput.files[0]; if(!f) return;
+      fileLabel.textContent = f.name;
+      if(!window.XLSX){ showToast('مكتبة Excel لم تُحمَّل — تحقّق من الاتصال'); return; }
+      var rd = new FileReader();
+      rd.onload = function(){
+        try{
+          var wb = XLSX.read(new Uint8Array(rd.result), {type:'array'});
+          var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:'', raw:false});
+          showBulkUsersPreview(rows, preview);
+        }catch(e){ console.error(e); clear(preview).appendChild(el('p',{class:'error-text', text:'تعذّرت قراءة الملف: '+e.message})); }
+        fileInput.value = '';
+      };
+      rd.readAsArrayBuffer(f);
+    }});
+    return el('div',{class:'card'},[
+      el('h2',{text:'إنشاء حسابات جماعية من Excel'}),
+      el('p',{class:'muted', text:'لإنشاء عدد كبير من الحسابات مرة واحدة (مثل موظفي الاستعلامات). الأعمدة: الاسم الكامل، اسم المستخدم (إنجليزي)، الدور، المواقع (لموظف الاستعلامات، تُفصل بفاصلة)، الوجبة، الهاتف. يُنشئ النظام لكل حساب كلمة مرور أولية عشوائية تظهر مرة واحدة فقط في تقرير تطبعه وتسلّمه للموظفين، ثم يغيّرها كل موظف من زر "🔑 كلمة المرور".'}),
+      el('div',{class:'row'},[el('button',{class:'btn', type:'button', id:'bulkUsersTemplateBtn', text:'📥 تنزيل النموذج', onclick:function(){
+        if(!window.XLSX){ showToast('مكتبة Excel لم تُحمَّل — تحقّق من الاتصال'); return; }
+        var wb = XLSX.utils.book_new(); wb.Workbook = {Views:[{RTL:true}]};
+        var loc = locations()[0];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([BULK_USER_COLS.map(function(c){ return c[1]; }), ['علي حسين كاظم','ali.hussein','الاستعلامات', loc ? loc.name : '','صباحي','07701234567']]), 'الحسابات');
+        XLSX.writeFile(wb, 'ameed-accounts-template.xlsx');
+      }})]),
+      el('div',{class:'file-drop'},[el('label',{'for':'bulkUsersFile', class:'btn btn-primary', style:{cursor:'pointer'}, text:'📄 اختر ملف Excel'}), fileInput, fileLabel]),
+      preview
+    ]);
+  }
+  function showBulkUsersPreview(rows, box){
+    clear(box);
+    if(!rows.length){ box.appendChild(emptyNote('الملف فارغ.')); return; }
+    var head = rows[0].map(normName), idx = {};
+    BULK_USER_COLS.forEach(function(c){ idx[c[0]] = head.indexOf(normName(c[1])); });
+    if(idx.name < 0 || idx.username < 0 || idx.role < 0){ box.appendChild(el('p',{class:'error-text', text:'الأعمدة المطلوبة غير موجودة: الاسم الكامل، اسم المستخدم، الدور'})); return; }
+    var taken = {};
+    S.users.forEach(function(u){ taken[String(u.username).toLowerCase()] = 1; });
+    var locByName = {};
+    locations().forEach(function(l){ locByName[normName(l.name)] = l.id; });
+    var list = rows.slice(1).filter(function(r){ return r.some(function(c){ return String(c).trim() !== ''; }); }).map(function(r){
+      function cell(k){ return idx[k] >= 0 ? String(r[idx[k]] === undefined ? '' : r[idx[k]]).trim().replace(/\s+/g,' ') : ''; }
+      var x = {name:cell('name'), username:cell('username').toLowerCase(), roleLabel:cell('role'), locNames:cell('locations'), shift:cell('shift'), phone:cell('phone')};
+      x.role = roleFromLabel(x.roleLabel);
+      x.locations = [];
+      x.locNames.split(/[،,]/).map(function(s){ return s.trim(); }).filter(Boolean).forEach(function(n){
+        var id = locByName[normName(n)];
+        if(id){ if(x.locations.indexOf(id) < 0) x.locations.push(id); } else x._err = 'الموقع "'+n+'" غير موجود في النظام';
+      });
+      if(!x.name) x._err = 'الاسم فارغ';
+      else if(!validUsername(x.username)) x._err = 'اسم المستخدم غير صالح (أحرف إنجليزية صغيرة وأرقام و . _ -)';
+      else if(!x.role) x._err = 'الدور غير معروف: '+x.roleLabel;
+      else if(x.role === 'driver') x._err = 'حسابات السائقين تُنشأ من "+ حساب جديد" لربطها بسجل السائق';
+      else if(x.role === 'gate' && !x.locations.length && !x._err) x._err = 'موظف الاستعلامات يحتاج موقعاً';
+      if(!x._err && taken[x.username]) x._skip = 'اسم المستخدم موجود مسبقاً';
+      if(!x._err && !x._skip) taken[x.username] = 1;
+      return x;
+    });
+    var ok = list.filter(function(x){ return !x._err && !x._skip; });
+    box.appendChild(el('p',{class:'muted', text:'جاهزة للإنشاء: '+ok.length+' من '+list.length}));
+    box.appendChild(tableNode(['الحالة','الاسم','اسم المستخدم','الدور','المواقع','الوجبة','الهاتف'], list.map(function(x){
+      return [x._err ? '✕ '+x._err : x._skip ? '— تُتجاوز: '+x._skip : '✓ جديد', x.name, x.username, ROLE_LABEL[x.role] || x.roleLabel, x.locations.map(locationName).join('، ') || '—', x.shift, x.phone];
+    }), {rowClass:function(i){ return list[i]._err ? 'row-error' : list[i]._skip ? 'row-warn' : ''; }}));
+    if(!ok.length) return;
+    var progress = el('p',{class:'muted', id:'bulkUsersProgress'});
+    var btn = el('button',{class:'btn btn-primary', type:'button', id:'bulkUsersCommitBtn', text:'إنشاء '+ok.length+' حساباً', onclick:function(){
+      confirmModal('إنشاء الحسابات', 'سيُنشأ '+ok.length+' حساباً بكلمات مرور أولية عشوائية. ستظهر كلمات المرور مرة واحدة فقط في نهاية العملية — اطبعها أو صدّرها إلى Excel قبل مغادرة الصفحة.', 'إنشاء', function(){
+        btn.disabled = true;
+        createUsersSequentially(ok, progress).then(function(results){ showBulkUsersResult(results, box); });
+      });
+    }});
+    box.appendChild(el('div',{class:'row', style:{marginTop:'10px'}},[btn, progress]));
+  }
+  /* واحداً بعد الآخر (تطبيق Auth الثانوي يحمل مستخدماً واحداً في كل لحظة) */
+  function createUsersSequentially(list, progress){
+    var results = [];
+    return list.reduce(function(p, x, i){
+      return p.then(function(){
+        progress.textContent = 'جارٍ إنشاء '+(i+1)+' من '+list.length+' — '+x.name;
+        var pw = randomPassword();
+        return createAuthUser(x.username, pw).then(function(newUid){
+          var data = {username:x.username, name:x.name, role:x.role, locations:x.role === 'gate' ? x.locations : [], driverId:'', active:true,
+            shift:x.shift, phone:x.phone, createdAt:nowISO(), createdBy:S.authUser.uid};
+          return db.collection('users').doc(newUid).set(data).then(function(){ results.push({x:x, password:pw}); });
+        }).catch(function(e){ console.error(e); results.push({x:x, error:errMsg(e)}); })
+          .then(function(){ return new Promise(function(r){ setTimeout(r, 350); }); });
+      });
+    }, Promise.resolve()).then(function(){
+      var okN = results.filter(function(r){ return !r.error; }).length;
+      audit('user.bulkCreate', 'users', '', okN+' حساباً من Excel');
+      progress.textContent = '';
+      return results;
+    });
+  }
+  function showBulkUsersResult(results, box){
+    clear(box);
+    var done = results.filter(function(r){ return !r.error; }), failed = results.filter(function(r){ return r.error; });
+    box.appendChild(el('div',{class:'alert '+(failed.length ? 'danger' : 'info')},[el('span',{class:'ic', text:failed.length ? '⚠' : '✓'}),
+      el('span',{text:'أُنشئ '+done.length+' حساباً'+(failed.length ? '، وتعذّر '+failed.length+' (التفاصيل في نهاية التقرير)' : '')+'. كلمات المرور لن تظهر مرة أخرى — اطبع التقرير أو صدّره الآن.'})]));
+    var reportBox = el('div');
+    box.appendChild(reportBox);
+    var spec = {
+      title:'بيانات الدخول للحسابات الجديدة', fileName:'new-accounts',
+      meta:[['رابط النظام', location.origin + location.pathname], ['التاريخ', fmtDate(new Date())], ['ملاحظة', 'كلمة المرور أولية — يغيّرها الموظف من زر "🔑 كلمة المرور" بعد أول دخول']],
+      stats:[{label:'حسابات أُنشئت', value:cNum(done.length), total:true}, {label:'تعذّر إنشاؤها', value:cNum(failed.length)}],
+      sections:[{title:'الحسابات', headers:['ت','الاسم','الدور','المواقع','الوجبة','اسم المستخدم','كلمة المرور الأولية'],
+        rows:done.map(function(r, i){ return [String(i+1), r.x.name, ROLE_LABEL[r.x.role], r.x.locations.map(locationName).join('، '), r.x.shift, r.x.username, r.password]; })}],
+      signs:['مدير النظام']
+    };
+    if(failed.length) spec.sections.push({title:'تعذّر إنشاؤها', headers:['الاسم','اسم المستخدم','السبب'], rows:failed.map(function(r){ return [r.x.name, r.x.username, r.error]; })});
+    renderReport(spec, reportBox);
   }
 
   /* ---------------- استيراد العجلات والسائقين من Excel ---------------- */
