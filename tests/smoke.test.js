@@ -374,6 +374,7 @@ async function submitModal(page) {
     const ws = XLSX.utils.aoa_to_sheet([['الاسم الكامل', 'اسم المستخدم', 'الدور', 'المواقع', 'الوجبة', 'الهاتف'],
       ['موظف جماعي أول', 'bulk.one', 'الاستعلامات', loc, 'صباحي', '07700000001'],
       ['موظف جماعي ثانٍ', 'bulk.two', 'المالية', '', '', ''],
+      ['حيدر كاظم', 'bulk.driver', 'سائق', '', '', ''],
       ['اسم مكرر', 'test.gate', 'الاستعلامات', loc, '', '']]);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الحسابات');
     const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
@@ -381,12 +382,14 @@ async function submitModal(page) {
     const inp = document.getElementById('bulkUsersFile'); inp.files = dt.files; inp.dispatchEvent(new Event('change'));
   });
   await page.waitForSelector('#bulkUsersCommitBtn');
-  check(/جاهزة للإنشاء: 2 من 3/.test(await page.textContent('#bulkUsersPreview')), 'المعاينة: حسابان جديدان وتجاوز اسم المستخدم المكرر');
+  check(/جاهزة للإنشاء: 3 من 4/.test(await page.textContent('#bulkUsersPreview')), 'المعاينة: ثلاثة حسابات جديدة (منها سائق) وتجاوز اسم المستخدم المكرر');
   await page.click('#bulkUsersCommitBtn');
   await page.click('.modal .btn-primary');
   await page.waitForSelector('#bulkUsersPreview #printableReport', { timeout: 15000 });
   const bulkRows = await page.$$eval('#bulkUsersPreview #printableReport tbody tr', (r) => r.map((x) => Array.from(x.cells).map((c) => c.textContent)));
-  check(bulkRows.length === 2 && bulkRows.every((r) => /^[a-z0-9]{8}$/.test(r[6])), 'تقرير بيانات الدخول بكلمات مرور أولية عشوائية');
+  check(bulkRows.length === 3 && bulkRows.every((r) => /^[a-z0-9]{8}$/.test(r[6])), 'تقرير بيانات الدخول بكلمات مرور أولية عشوائية');
+  const bd = await page.evaluate(() => window.__ameedVehicles.S.users.find((u) => u.username === 'bulk.driver'));
+  check(bd && bd.role === 'driver' && bd.driverId === 'demo-drv-1', 'حساب السائق الجماعي مربوط تلقائياً بسجله');
   const bu = await page.evaluate(() => window.__ameedVehicles.S.users.find((u) => u.username === 'bulk.one'));
   check(bu && bu.role === 'gate' && bu.locations.length === 1 && bu.shift === 'صباحي', 'الحساب الجماعي بالدور والموقع والوجبة');
   const bulkPw = bulkRows[0][6];
