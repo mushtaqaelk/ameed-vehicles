@@ -2856,7 +2856,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     }});
     return el('div',{class:'card'},[
       el('h2',{text:'إنشاء حسابات جماعية من Excel'}),
-      el('p',{class:'muted', text:'لإنشاء عدد كبير من الحسابات مرة واحدة (مثل موظفي الاستعلامات). الأعمدة: الاسم الكامل، اسم المستخدم (إنجليزي)، الدور، المواقع (لموظف الاستعلامات، تُفصل بفاصلة)، الوجبة، الهاتف. يُنشئ النظام لكل حساب كلمة مرور أولية عشوائية تظهر مرة واحدة فقط في تقرير تطبعه وتسلّمه للموظفين، ثم يغيّرها كل موظف من زر "🔑 كلمة المرور".'}),
+      el('p',{class:'muted', text:'لإنشاء عدد كبير من الحسابات مرة واحدة (موظفو الاستعلامات، السائقون...). الأعمدة: الاسم الكامل، اسم المستخدم (إنجليزي)، الدور، المواقع (لموظف الاستعلامات، تُفصل بفاصلة)، الوجبة، الهاتف. حساب السائق يُربط تلقائياً بسجله في قائمة السائقين، فيجب أن يطابق "الاسم الكامل" اسمه هناك. يُنشئ النظام لكل حساب كلمة مرور أولية عشوائية تظهر مرة واحدة فقط في تقرير تطبعه وتسلّمه للموظفين، ثم يغيّرها كل موظف من زر "🔑 كلمة المرور".'}),
       el('div',{class:'row'},[el('button',{class:'btn', type:'button', id:'bulkUsersTemplateBtn', text:'📥 تنزيل النموذج', onclick:function(){
         if(!window.XLSX){ showToast('مكتبة Excel لم تُحمَّل — تحقّق من الاتصال'); return; }
         var wb = XLSX.utils.book_new(); wb.Workbook = {Views:[{RTL:true}]};
@@ -2878,6 +2878,10 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     S.users.forEach(function(u){ taken[String(u.username).toLowerCase()] = 1; });
     var locByName = {};
     locations().forEach(function(l){ locByName[normName(l.name)] = l.id; });
+    // حساب السائق يُربط بسجله في قائمة السائقين بمطابقة الاسم الكامل
+    var drvByName = {}, drvLinked = {};
+    S.drivers.forEach(function(d){ drvByName[normName(d.name)] = d; });
+    S.users.forEach(function(u){ if(u.role === 'driver' && u.driverId) drvLinked[u.driverId] = u.username; });
     var list = rows.slice(1).filter(function(r){ return r.some(function(c){ return String(c).trim() !== ''; }); }).map(function(r){
       function cell(k){ return idx[k] >= 0 ? String(r[idx[k]] === undefined ? '' : r[idx[k]]).trim().replace(/\s+/g,' ') : ''; }
       var x = {name:cell('name'), username:cell('username').toLowerCase(), roleLabel:cell('role'), locNames:cell('locations'), shift:cell('shift'), phone:cell('phone')};
@@ -2890,10 +2894,14 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       if(!x.name) x._err = 'الاسم فارغ';
       else if(!validUsername(x.username)) x._err = 'اسم المستخدم غير صالح (أحرف إنجليزية صغيرة وأرقام و . _ -)';
       else if(!x.role) x._err = 'الدور غير معروف: '+x.roleLabel;
-      else if(x.role === 'driver') x._err = 'حسابات السائقين تُنشأ من "+ حساب جديد" لربطها بسجل السائق';
+      else if(x.role === 'driver'){
+        var drec = drvByName[normName(x.name)];
+        if(!drec) x._err = 'لا يوجد سائق بهذا الاسم في قائمة السائقين';
+        else { x.driverId = drec.id; x.locations = []; if(drvLinked[drec.id]) x._skip = 'السائق مرتبط مسبقاً بالحساب '+drvLinked[drec.id]; }
+      }
       else if(x.role === 'gate' && !x.locations.length && !x._err) x._err = 'موظف الاستعلامات يحتاج موقعاً';
-      if(!x._err && taken[x.username]) x._skip = 'اسم المستخدم موجود مسبقاً';
-      if(!x._err && !x._skip) taken[x.username] = 1;
+      if(!x._err && !x._skip && taken[x.username]) x._skip = 'اسم المستخدم موجود مسبقاً';
+      if(!x._err && !x._skip){ taken[x.username] = 1; if(x.driverId) drvLinked[x.driverId] = x.username; }
       return x;
     });
     var ok = list.filter(function(x){ return !x._err && !x._skip; });
@@ -2919,7 +2927,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
         progress.textContent = 'جارٍ إنشاء '+(i+1)+' من '+list.length+' — '+x.name;
         var pw = randomPassword();
         return createAuthUser(x.username, pw).then(function(newUid){
-          var data = {username:x.username, name:x.name, role:x.role, locations:x.role === 'gate' ? x.locations : [], driverId:'', active:true,
+          var data = {username:x.username, name:x.name, role:x.role, locations:x.role === 'gate' ? x.locations : [], driverId:x.role === 'driver' ? x.driverId : '', active:true,
             shift:x.shift, phone:x.phone, createdAt:nowISO(), createdBy:S.authUser.uid};
           return db.collection('users').doc(newUid).set(data).then(function(){ results.push({x:x, password:pw}); });
         }).catch(function(e){ console.error(e); results.push({x:x, error:errMsg(e)}); })
