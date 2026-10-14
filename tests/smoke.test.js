@@ -95,13 +95,14 @@ async function submitModal(page) {
 
   console.log('\n[2] التبويبات حسب الدور');
   const expected = {
-    admin: ['home', 'requests', 'vehicles', 'drivers', 'finance', 'reports', 'admin'],
+    admin: ['home', 'requests', 'vehicles', 'drivers', 'finance', 'reports', 'monitor', 'admin'],
     fleet: ['home', 'requests', 'vehicles', 'drivers', 'reports'],
     supervisor: ['home', 'drivers'],
     gate: ['single:gate'],
+    gatesup: ['single:monitor'],
     finance: ['single:finance'],
     driver: ['home', 'requests', 'me'],
-    viewer: ['home', 'vehicles', 'drivers', 'finance', 'reports'],
+    viewer: ['home', 'vehicles', 'drivers', 'finance', 'reports', 'monitor'],
   };
   for (const [role, tabs] of Object.entries(expected)) {
     await login(page, role);
@@ -132,13 +133,16 @@ async function submitModal(page) {
   await goTab(page, 'requests');
   check(!(await page.$('[data-new-request]')), 'مدير الآليات لا يقدّم طلبات');
 
-  console.log('\n[4] الاستعلامات: صفحة واحدة، تسجيل خروج ودخول في موقعه فقط، والتقرير اليومي');
+  // صورة صغيرة (PNG 1x1) للكاميرا والوصولات
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  console.log('\n[4] الاستعلامات: صفحة واحدة، الاستمارة بلا اتجاه ولا عداد، كل المواقع، الوجهة إجبارية، الكاميرا، والعجلات الخارجية');
   await login(page, 'gate');
   check(await page.isVisible('#panel-gate .clock-time'), 'مربع الساعة ظاهر');
   await page.click('#gateOutBtn');
   const locOptions = await page.$$eval('.modal [name="locationId"] option', (o) => o.map((x) => x.value));
-  check(JSON.stringify(locOptions) === '["gate-main"]', `موظف الاستعلامات يرى موقعه فقط: ${locOptions}`);
-  // عجلة داخل الجامعة: الهايلوكس (demo-veh-1)
+  check(locOptions.length === 3 && locOptions[0] === 'gate-main', `جميع المواقع ظاهرة وموقع الموظف أولاً: ${locOptions}`);
+  check(!(await page.$('.modal [name="direction"]')) && !(await page.$('.modal [name="odometer"]')), 'لا حقل للاتجاه ولا لعداد الكيلومترات');
+  check(!!(await page.$('.modal input[type=file][name="photo"]')), 'حقل الكاميرا (اختياري) موجود');
   const inVehicle = await page.evaluate(() => {
     const d = window.__ameedVehicles.derived();
     return Object.keys(d.live).find((k) => d.live[k].where === 'in' && d.live[k].vehicle.status === 'active');
@@ -148,21 +152,49 @@ async function submitModal(page) {
   const drv = await page.inputValue('.modal [name="driver"]');
   check(drv.length > 0, `السائق الافتراضي يُملأ تلقائياً: ${drv}`);
   await page.fill('.modal [name="driver"]', 'سائق من خارج القائمة');
-  await page.fill('.modal [name="purpose"]', 'اختبار — مهمة رسمية');
-  await page.fill('.modal [name="odometer"]', '999999');
+  await page.selectOption('.modal [name="locationId"]', 'garage');
   await submitModal(page);
+  check(/الوجهة/.test(await page.textContent('.modal .error-text')), 'الوجهة أو الغرض إجبارية عند الخروج');
+  await page.fill('.modal [name="purpose"]', 'اختبار — مهمة رسمية');
+  await page.setInputFiles('.modal [name="photo"]', { name: 'gate.png', mimeType: 'image/png', buffer: png });
+  await submitModal(page);
+  await page.waitForTimeout(300);
   let live = await page.evaluate((v) => window.__ameedVehicles.derived().live[v].where, inVehicle);
   check(live === 'out', 'العجلة أصبحت خارج الجامعة');
   const mv = await page.evaluate((v) => window.__ameedVehicles.S.movements.filter((m) => m.vehicleId === v).sort((a, b) => b.at.localeCompare(a.at))[0], inVehicle);
   check(mv.driverName === 'سائق من خارج القائمة' && !mv.driverId && mv.by === 'u_gate', 'سائق خارج القائمة + اسم المسجِّل محفوظ');
-  await page.click('#gateOutBtn');
+  check(mv.locationId === 'garage' && !!mv.photoId, 'سُجّلت الحركة في موقع آخر مع الصورة');
+  await page.click('#gateInBtn');
   await page.selectOption('.modal [name="vehicleId"]', inVehicle);
   await page.waitForTimeout(50);
-  check((await page.inputValue('.modal [name="direction"]')) === 'in', 'الاتجاه المقترح: دخول');
   await submitModal(page);
   live = await page.evaluate((v) => window.__ameedVehicles.derived().live[v].where, inVehicle);
-  check(live === 'in', 'سُجّل الدخول');
-  const todayISO = await page.evaluate(() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); });
+  check(live === 'in', 'سُجّل الدخول من زر "دخول عجلة"');
+  // عجلة من خارج الجامعة: "جديد" ثم الخروج من بطاقتها
+  await page.click('#gateInBtn');
+  await page.selectOption('.modal [name="vehicleId"]', '__new');
+  await page.fill('.modal [name="extPlate"]', '55667 د كربلاء');
+  await page.selectOption('.modal [name="extCategory"]', 'maintenance');
+  await page.fill('.modal [name="driver"]', 'سائق شركة الصيانة');
+  await page.fill('.modal [name="companion"]', 'فني الكهرباء');
+  await page.fill('.modal [name="purpose"]', 'صيانة المولدة');
+  await submitModal(page);
+  const extIn = await page.evaluate(() => window.__ameedVehicles.derived().extInside.find((x) => /55667/.test(x.plate)));
+  check(extIn && extIn.category === 'maintenance' && extIn.companion === 'فني الكهرباء', 'سُجّل دخول عجلة من خارج الجامعة بصنفها ومرافقها');
+  await page.click(`[data-ext-exit="${extIn.key}"]`);
+  await page.fill('.modal [name="purpose"]', 'انتهاء العمل');
+  await submitModal(page);
+  const stillIn = await page.evaluate(() => window.__ameedVehicles.derived().extInside.some((x) => /55667/.test(x.plate)));
+  check(!stillIn, 'سُجّل خروج العجلة الخارجية من بطاقتها');
+  // مدير الاستعلامات: متابعة الموظفين والعجلات الخارجية وتقرير المتابعة
+  await login(page, 'gatesup');
+  check(await page.isVisible('#panel-monitor .clock-time'), 'مدير الاستعلامات: صفحة المتابعة مع الساعة');
+  const staffRows = await page.$$eval('#panel-monitor table', (t) => t[0].querySelectorAll('tbody tr').length);
+  check(staffRows >= 1 && (await page.$$('#panel-monitor [data-ext]')).length >= 1, 'جدول نشاط الموظفين وقائمة العجلات الخارجية');
+  await page.click('#monReportBtn');
+  await page.waitForSelector('#panel-monitor #printableReport');
+  check(/تقرير متابعة الاستعلامات/.test(await page.textContent('#panel-monitor .report-title')), 'تقرير المتابعة قابل للطباعة');
+  await login(page, 'gate');  const todayISO = await page.evaluate(() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); });
   check((await page.inputValue('#dailyReportDate')) === todayISO, 'تاريخ التقرير اليومي = اليوم افتراضياً');
   await page.click('#dailyReportBtn');
   await page.waitForSelector('#panel-gate #printableReport');
@@ -182,8 +214,6 @@ async function submitModal(page) {
   await submitModal(page);
   check(/3,000/.test(await page.textContent('.modal')), 'تحذير عند قراءة عداد غير منطقية');
   await fillModal(page, { odometer: lastOdo + 320 });
-  // صورة وصل صغيرة (PNG 1x1)
-  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
   await page.setInputFiles('.modal [name="receipt"]', { name: 'r.png', mimeType: 'image/png', buffer: png });
   await submitModal(page);
   await page.waitForTimeout(300);

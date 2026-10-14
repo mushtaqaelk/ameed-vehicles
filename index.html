@@ -505,8 +505,10 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     {id:'garage', name:'مرآب الجامعة'}
   ];
 
-  var ROLES = ['admin','fleet','supervisor','gate','finance','driver','viewer'];
-  var ROLE_LABEL = {admin:'مدير النظام', fleet:'مدير الآليات', supervisor:'مدير القسم', gate:'الاستعلامات', finance:'المالية', driver:'سائق', viewer:'الإدارة العليا'};
+  var ROLES = ['admin','fleet','supervisor','gatesup','gate','finance','driver','viewer'];
+  var ROLE_LABEL = {admin:'مدير النظام', fleet:'مدير الآليات', supervisor:'مدير القسم', gatesup:'مدير الاستعلامات', gate:'الاستعلامات', finance:'المالية', driver:'سائق', viewer:'الإدارة العليا'};
+  /* أصناف العجلات من خارج الجامعة التي تسجّلها الاستعلامات */
+  var EXT_CATEGORY = {atabah:'سيارة العتبة', crane:'رافعة', maintenance:'سيارة صيانة', parent:'ولي أمر طالبة', other:'أخرى'};
   var REQ_TYPE = {fuel:'وقود', maintenance:'صيانة', wash:'غسل وتنظيف', delay:'طلب تأخير', assist:'طلب مساعدة'};
   var REQ_ICON = {fuel:'⛽', maintenance:'🔧', wash:'🧽', delay:'⏳', assist:'🆘'};
   var POINT_CAT = {thanks:'شكر وتقدير', penalty:'عقوبة', other:'نقاط أخرى'};
@@ -747,6 +749,12 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
   function driverById(id){ return derived && derived.driverMap[id] || null; }
   function plateText(v){ return v ? (v.plate + (v.province ? ' — '+v.province : '')) : '—'; }
   function vehicleLabel(v){ return v ? v.plate + ' · ' + [v.make, v.model].filter(Boolean).join(' ') : 'عجلة محذوفة'; }
+  function extKey(plate){ return normName(String(plate || '').replace(/\s+/g, '')); }
+  /* اسم العجلة في سجل الحركة: عجلة الجامعة، أو عجلة من خارجها مع صنفها */
+  function movVehicleLabel(m){
+    if(m.external) return m.external.plate + ' · ' + (EXT_CATEGORY[m.external.category] || 'خارجية') + ' (من خارج الجامعة)';
+    return vehicleLabel(vehicleById(m.vehicleId));
+  }
   function driverLabel(id, name){ var d = id && driverById(id); return d ? d.name : (name || '—'); }
 
   /* ---------------- permissions ---------------- */
@@ -768,13 +776,16 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       supervisor:['home','drivers'],
       // الاستعلامات والمالية: صفحة واحدة بلا شريط تبويبات
       gate:['gate'],
+      gatesup:['monitor'],
       finance:['finance'],
       driver:['home','requests','me'],
-      viewer:['home','vehicles','drivers','finance','reports']
+      viewer:['home','vehicles','drivers','finance','reports','monitor']
     };
-    return all[role()] || ['home'];
+    var t = all[role()] || ['home'];
+    if(role() === 'admin') t = t.slice(0, -1).concat(['monitor', 'admin']);
+    return t;
   }
-  var TAB_LABEL = {me:'ملفي', home:'الرئيسية', gate:'الحركة', requests:'الطلبات', vehicles:'العجلات', drivers:'السائقون', finance:'المالية', reports:'التقارير', admin:'الإدارة'};
+  var TAB_LABEL = {me:'ملفي', home:'الرئيسية', gate:'الحركة', monitor:'متابعة الاستعلامات', requests:'الطلبات', vehicles:'العجلات', drivers:'السائقون', finance:'المالية', reports:'التقارير', admin:'الإدارة'};
 
   /* هل الطلب ينتظر إجراءً من المستخدم الحالي؟ */
   function awaitsMe(r){
@@ -804,8 +815,16 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     S.drivers.forEach(function(d){ driverMap[d.id] = d; });
 
     var movs = S.movements.slice().sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); });
-    var byVehicle = {};
-    movs.forEach(function(m){ (byVehicle[m.vehicleId] = byVehicle[m.vehicleId] || []).push(m); });
+    var byVehicle = {}, extLast = {};
+    movs.forEach(function(m){
+      if(m.external){ extLast[extKey(m.external.plate)] = m; return; } // عجلات من خارج الجامعة: خارج حساب الرحلات
+      (byVehicle[m.vehicleId] = byVehicle[m.vehicleId] || []).push(m);
+    });
+    // العجلات الخارجية الموجودة داخل الجامعة الآن: آخر حركة لها "دخول"
+    var extInside = Object.keys(extLast).map(function(k){ return extLast[k]; }).filter(function(m){ return m.direction === 'in'; })
+      .map(function(m){ return {key:extKey(m.external.plate), plate:m.external.plate, category:m.external.category || 'other', companion:m.external.companion || '',
+        driverName:m.driverName || '', since:m.at, locationId:m.locationId, purpose:m.purpose || '', byName:m.byName || '', inMs:now - toDate(m.at).getTime()}; })
+      .sort(function(a,b){ return String(a.since).localeCompare(String(b.since)); });
 
     // الرحلات: كل خروج مع أول دخول بعده للعجلة نفسها
     var trips = [], lastMov = {};
@@ -883,7 +902,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       if(avg && avg.samples >= 3 && fuelEff[rid] < avg.kmpl * (1 - st.fuelOverusePct/100)) fuelOver[rid] = true;
     });
 
-    derived = {vehicleMap:vehicleMap, driverMap:driverMap, trips:trips, live:live, odo:odo, fuelEff:fuelEff, vehicleAvg:vehicleAvg, fuelOver:fuelOver};
+    derived = {vehicleMap:vehicleMap, driverMap:driverMap, trips:trips, live:live, odo:odo, fuelEff:fuelEff, vehicleAvg:vehicleAvg, fuelOver:fuelOver, extInside:extInside};
     return derived;
   }
 
@@ -1542,112 +1561,168 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       var locs = allowedLocations();
       var head = el('div',{class:'card'},[
         el('h2',{text:'تسجيل حركة عجلة'}),
-        el('p',{class:'muted', text:role() === 'gate' ? 'مواقعك: '+(locs.length ? locs.map(function(l){ return l.name; }).join('، ') : 'لم يُحدَّد لك موقع بعد — راجع مدير النظام') : 'الوقت يُسجَّل تلقائياً. يمكن أيضاً التسجيل مباشرة من بطاقة العجلة في الرئيسية.'}),
+        el('p',{class:'muted', text:role() === 'gate' ? 'موقعك: '+(locs.length ? locs.map(function(l){ return l.name; }).join('، ') : '—')+' · يمكن التسجيل في أي موقع عند الحاجة.' : 'الوقت يُسجَّل تلقائياً.'}),
         el('div',{class:'seg'},[
           el('button',{class:'on-out', type:'button', id:'gateOutBtn', text:'➡ خروج عجلة', onclick:function(){ openMovementForm('', 'out'); }}),
           el('button',{class:'on-in', type:'button', id:'gateInBtn', text:'⬅ دخول عجلة', onclick:function(){ openMovementForm('', 'in'); }})
         ])
       ]);
+      this.ext = el('div',{class:'card'});
       this.list = el('div',{class:'card'});
-      // تقرير الحركة اليومية: اليوم المختار (اليوم الحالي افتراضياً)، ضمن مواقع الموظف فقط
+      // تقرير الحركة اليومية: اليوم المختار (اليوم الحالي افتراضياً)، ضمن مواقع الموظف وما سجّله بنفسه
       var self = this;
       this.reportDay = el('input',{id:'dailyReportDate', class:'input', type:'date', value:fmtISODate(new Date()), max:fmtISODate(new Date()), style:{maxWidth:'200px'}});
       this.reportBox = el('div',{hidden:true});
       var reportCard = el('div',{class:'card no-print'},[
         el('h2',{text:'تقرير الحركة اليومية'}),
-        el('p',{class:'muted', text:'اختر اليوم ثم اعرض التقرير واطبعه. يشمل حركات مواقعك فقط.'}),
+        el('p',{class:'muted', text:'اختر اليوم ثم اعرض التقرير واطبعه. يشمل حركات موقعك وما سجّلته أنت.'}),
         el('div',{class:'row'},[this.reportDay, el('button',{class:'btn btn-primary', type:'button', id:'dailyReportBtn', text:'عرض التقرير', onclick:function(){
           if(!self.reportDay.value){ showToast('اختر اليوم'); return; }
           self.reportShown = true; self.showReport();
           self.reportBox.scrollIntoView({behavior:'smooth', block:'start'});
         }})])
       ]);
-      appendKids(root, [clockCard(), head, this.list, reportCard, this.reportBox]);
+      appendKids(root, [clockCard(), head, this.ext, this.list, reportCard, this.reportBox]);
     },
     showReport:function(){
-      renderReport(dailyMovementsSpec(this.reportDay.value, allowedLocations().map(function(l){ return l.id; })), this.reportBox);
+      renderReport(dailyMovementsSpec(this.reportDay.value, allowedLocations().map(function(l){ return l.id; }), S.authUser.uid), this.reportBox);
     },
     refresh:function(){
       if(this.reportShown && this.reportDay.value) this.showReport(); // يبقى التقرير محدَّثاً عند تسجيل حركة جديدة
+      clear(this.ext);
+      var ins = derived.extInside;
+      this.ext.appendChild(el('div',{class:'row-between'},[el('h2',{text:'عجلات من خارج الجامعة داخلها الآن'}), el('span',{class:'faint', text:ins.length+' عجلة'})]));
+      this.ext.appendChild(ins.length ? el('div',{class:'stack'}, ins.map(function(x){ return extInsideItem(x, true); })) : emptyNote('لا توجد عجلات خارجية داخل الجامعة.'));
       clear(this.list);
-      var locIds = allowedLocations().map(function(l){ return l.id; });
+      var locIds = allowedLocations().map(function(l){ return l.id; }), me = S.authUser.uid;
       var since = Date.now() - 48*3600000;
-      var movs = S.movements.filter(function(m){ return toDate(m.at).getTime() >= since && (role() !== 'gate' || locIds.indexOf(m.locationId) >= 0); })
+      var movs = S.movements.filter(function(m){ return toDate(m.at).getTime() >= since && (role() !== 'gate' || locIds.indexOf(m.locationId) >= 0 || m.by === me); })
         .sort(function(a,b){ return String(b.at).localeCompare(String(a.at)); });
       this.list.appendChild(el('div',{class:'row-between'},[el('h2',{text:'حركات آخر 48 ساعة'}), el('span',{class:'faint', text:movs.length+' حركة'})]));
       if(!movs.length){ this.list.appendChild(emptyNote('لا توجد حركات مسجّلة خلال آخر 48 ساعة.')); return; }
       this.list.appendChild(el('div',{class:'stack'}, movs.slice(0,100).map(movementItem)));
     }
   };
-  function movementItem(m){
-    var v = vehicleById(m.vehicleId);
-    return el('div',{class:'item', 'data-movement':m.id},[
+  /* بطاقة عجلة خارجية داخل الجامعة، مع زر تسجيل خروجها لموظف الاستعلامات */
+  function extInsideItem(x, withExit){
+    return el('div',{class:'item', 'data-ext':x.key},[
       el('div',{class:'item-top'},[
-        el('span',{class:'item-title'},[m.direction === 'out' ? '➡ ' : '⬅ ', el('span',{class:'plate', text:v ? v.plate : '—'}), ' ', v ? [v.make, v.model].filter(Boolean).join(' ') : '']),
-        pill(m.direction, m.direction === 'out' ? 'خروج' : 'دخول')
+        el('span',{class:'item-title'},['🚗 ', el('span',{class:'plate', text:x.plate}), ' · ', EXT_CATEGORY[x.category] || 'أخرى']),
+        pill('in', 'داخل منذ '+fmtDuration(x.inMs))
       ]),
+      el('div',{class:'item-meta'},[
+        el('span',{},['السائق: ', el('b',{text:x.driverName || '—'})]),
+        x.companion ? el('span',{},['المرافق: ', x.companion]) : null,
+        el('span',{},['دخل: ', el('b',{class:'num', text:fmtDT(x.since)})]),
+        el('span',{},['البوابة: ', locationName(x.locationId)]),
+        x.purpose ? el('span',{},['الغرض: ', x.purpose]) : null,
+        el('span',{class:'faint', text:'سجّلها: '+(x.byName || '—')})
+      ]),
+      withExit && canRecordMovement() ? el('div',{class:'item-actions'},[el('button',{class:'btn btn-sm', type:'button', 'data-ext-exit':x.key, text:'➡ تسجيل خروج', onclick:function(){ openMovementForm('ext:'+x.key, 'out'); }})]) : null
+    ]);
+  }
+  function movementItem(m){
+    var v = m.external ? null : vehicleById(m.vehicleId);
+    var title = m.external
+      ? [m.direction === 'out' ? '➡ ' : '⬅ ', el('span',{class:'plate', text:m.external.plate}), ' · ', EXT_CATEGORY[m.external.category] || 'خارجية', ' ', el('span',{class:'badge', text:'من خارج الجامعة'})]
+      : [m.direction === 'out' ? '➡ ' : '⬅ ', el('span',{class:'plate', text:v ? v.plate : '—'}), ' ', v ? [v.make, v.model].filter(Boolean).join(' ') : ''];
+    return el('div',{class:'item', 'data-movement':m.id},[
+      el('div',{class:'item-top'},[el('span',{class:'item-title'}, title), pill(m.direction, m.direction === 'out' ? 'خروج' : 'دخول')]),
       el('div',{class:'item-meta'},[
         el('span',{},['الوقت: ', el('b',{class:'num', text:fmtDT(m.at)})]),
         el('span',{},['السائق: ', el('b',{text:driverLabel(m.driverId, m.driverName)})]),
+        m.external && m.external.companion ? el('span',{},['المرافق: ', m.external.companion]) : null,
         el('span',{},['الموقع: ', locationName(m.locationId)]),
         m.odometer ? el('span',{},['العداد: ', el('span',{class:'num', text:fmtNum(m.odometer)})]) : null,
-        m.purpose ? el('span',{},['الوجهة: ', m.purpose]) : null,
+        m.purpose ? el('span',{},[m.direction === 'in' ? 'الغرض: ' : 'الوجهة: ', m.purpose]) : null,
         el('span',{class:'faint', text:'سجّلها: '+(m.byName || '—')})
       ]),
-      m.note ? el('div',{class:'item-note', text:m.note}) : null
+      m.note ? el('div',{class:'item-note', text:m.note}) : null,
+      m.photoId ? el('div',{class:'item-actions'},[el('button',{class:'btn btn-sm btn-ghost', type:'button', 'data-movement-photo':m.id, text:'📷 عرض الصورة', onclick:function(){ showAttachment(m.photoId, 'صورة الحركة'); }})]) : null
     ]);
   }
 
+  /* استمارة الخروج والدخول: الاتجاه يحدده الزر المضغوط، والعجلة من عجلات الجامعة أو "جديد" لعجلة من خارجها */
   function openMovementForm(vid, dir){
-    var locs = allowedLocations();
-    if(!locs.length){ showToast('لم يُحدَّد لك موقع — راجع مدير النظام'); return; }
-    if(!S.vehicles.length){ showToast('لا توجد عجلات مسجّلة'); return; }
+    dir = dir === 'in' ? 'in' : 'out';
+    var allLocs = locations(), mine = allowedLocations();
+    var defLoc = (mine[0] || allLocs[0] || {}).id;
+    var NEW = '__new';
+    var opts = [opt('', 'اختر العجلة...'), opt(NEW, '➕ عجلة من خارج الجامعة (جديد)')];
+    derived.extInside.forEach(function(x){ opts.push(opt('ext:'+x.key, '🚗 '+x.plate+' · '+(EXT_CATEGORY[x.category] || 'خارجية')+' — داخل الجامعة الآن')); });
+    opts = opts.concat(S.vehicles.slice().sort(byPlate).map(function(v){ return opt(v.id, vehicleLabel(v)); }));
     var confirmKey = '';
-    function defaults(ctx, id, d){
+    function isExt(id){ return id === NEW || /^ext:/.test(id || ''); }
+    function defaults(ctx, id){
+      var ext = isExt(id);
+      ['extPlate','extCategory','companion'].forEach(function(k){ ctx.show(k, ext); });
+      // الوجهة إجبارية عند الخروج، والغرض إجباري عند دخول عجلة من خارج الجامعة
+      ctx.show('purpose', dir === 'out' || ext);
+      ctx.error('');
+      if(/^ext:/.test(id || '')){
+        var x = derived.extInside.find(function(e){ return 'ext:'+e.key === id; });
+        if(x){ ctx.set('extPlate', x.plate); ctx.set('extCategory', x.category); ctx.set('companion', x.companion); ctx.set('driver', x.driverName); }
+        return;
+      }
+      if(id === NEW){ ctx.set('extPlate', ''); ctx.set('companion', ''); ctx.set('driver', ''); return; }
       var v = vehicleById(id), s = id && derived.live[id];
       if(!v) return;
-      if(!d){ d = s && s.where === 'out' ? 'in' : 'out'; ctx.set('direction', d); }
-      var drv = d === 'in' && s && s.where === 'out' ? driverLabel(s.driverId, s.driverName) : driverLabel(v.defaultDriverId, '');
+      var drv = dir === 'in' && s && s.where === 'out' ? driverLabel(s.driverId, s.driverName) : driverLabel(v.defaultDriverId, '');
       ctx.set('driver', drv === '—' ? '' : drv);
-      ctx.show('purpose', d === 'out');
-      ctx.error('');
-      ctx.set('odometer', '');
-      var odoField = document.querySelector('.modal input[name=odometer]');
-      if(odoField) odoField.placeholder = 'آخر قراءة: '+fmtNum(currentOdo(id));
     }
     formModal({
-      title:dir === 'in' ? 'تسجيل دخول عجلة' : dir === 'out' ? 'تسجيل خروج عجلة' : 'تسجيل حركة',
+      title:dir === 'in' ? 'تسجيل دخول عجلة' : 'تسجيل خروج عجلة',
       submitLabel:'تسجيل الحركة',
       fields:[
-        {key:'vehicleId', label:'العجلة', type:'select', options:vehicleOptions(), value:vid, required:true, onChange:function(v, ctx){ defaults(ctx, v, ''); }},
-        {key:'direction', label:'الاتجاه', type:'select', options:[opt('out','خروج من الجامعة'), opt('in','دخول إلى الجامعة')], value:dir || 'out', required:true,
-          onChange:function(d, ctx){ defaults(ctx, ctx.get('vehicleId'), d); }},
-        {key:'driver', label:'السائق الفعلي', list:activeDrivers().map(function(d){ return d.name; }), placeholder:'اختر أو اكتب اسم سائق', help:'يمكن كتابة اسم سائق من خارج القائمة'},
-        {key:'locationId', label:'الموقع / البوابة', type:'select', options:locs.map(function(l){ return opt(l.id, l.name); }), value:locs[0].id, required:true},
-        {key:'odometer', label:'قراءة العداد (اختياري)', type:'number', min:0, inputmode:'numeric'},
-        {key:'purpose', label:'الوجهة أو الغرض', placeholder:'مثال: مهمة رسمية إلى بغداد', hidden:dir === 'in'},
+        {key:'vehicleId', label:'العجلة', type:'select', options:opts, value:vid, required:true, onChange:function(v, ctx){ defaults(ctx, v); }},
+        {key:'extPlate', label:'رقم العجلة', placeholder:'مثال: 12345 أ كربلاء', required:false, hidden:true},
+        {key:'extCategory', label:'صنف العجلة', type:'select', options:mapOptions(EXT_CATEGORY), value:'other', hidden:true},
+        {key:'driver', label:'اسم السائق', list:activeDrivers().map(function(d){ return d.name; }), placeholder:'اختر أو اكتب اسم السائق', help:'يمكن كتابة اسم سائق من خارج القائمة'},
+        {key:'companion', label:'المرافق (إن وُجد)', hidden:true},
+        {key:'locationId', label:'الموقع / البوابة', type:'select', options:allLocs.map(function(l){ return opt(l.id, l.name); }), value:defLoc, required:true},
+        {key:'purpose', label:dir === 'in' ? 'الغرض من الدخول إلى الجامعة *' : 'الوجهة أو الغرض *', placeholder:dir === 'in' ? 'مثال: صيانة مولدة الكلية / إيصال طالبة' : 'مثال: مهمة رسمية إلى بغداد', hidden:dir === 'in'},
+        {key:'photo', label:'📷 صورة (اختيارية)', type:'file', accept:'image/*', capture:true, help:'التقط صورة عند وجود ما يستوجب التوثيق (حمولة، ضرر، وثيقة...)'},
         {key:'note', label:'ملاحظة', type:'textarea'}
       ],
-      onOpen:function(ctx){ if(vid) defaults(ctx, vid, dir); },
-      onSubmit:function(vals, ctx){
-        var v = vehicleById(vals.vehicleId), s = derived.live[vals.vehicleId];
-        if(!v) throw 'اختر العجلة';
-        if(locs.map(function(l){ return l.id; }).indexOf(vals.locationId) < 0) throw 'لا تملك صلاحية التسجيل في هذا الموقع';
-        if(vals.direction === 'out' && !vals.driver) throw 'اكتب اسم السائق الذي خرج بالعجلة';
+      onOpen:function(ctx){ defaults(ctx, vid); },
+      onSubmit:function(vals){
+        var id = vals.vehicleId, ext = isExt(id), v = null, s = null, external = null, key = '';
+        if(!id) throw 'اختر العجلة';
+        if(allLocs.map(function(l){ return l.id; }).indexOf(vals.locationId) < 0) throw 'اختر الموقع';
+        if(ext){
+          if(!vals.extPlate) throw 'اكتب رقم العجلة';
+          if(!vals.driver) throw 'اكتب اسم السائق';
+          external = {plate:vals.extPlate.replace(/\s+/g, ' ').trim(), category:vals.extCategory || 'other', companion:vals.companion || ''};
+          key = extKey(external.plate);
+        } else {
+          v = vehicleById(id); s = derived.live[id];
+          if(!v) throw 'اختر العجلة';
+          if(dir === 'out' && !vals.driver) throw 'اكتب اسم السائق الذي خرج بالعجلة';
+        }
+        if((dir === 'out' || ext) && !vals.purpose) throw dir === 'out' ? 'اكتب الوجهة أو الغرض من الخروج' : 'اكتب الغرض من الدخول إلى الجامعة';
         var warnings = [];
-        if(s && s.where === vals.direction) warnings.push(vals.direction === 'out' ? 'العجلة مسجّلة خارج الجامعة أصلاً.' : 'العجلة مسجّلة داخل الجامعة أصلاً.');
-        if(vals.direction === 'out' && v.status && v.status !== 'active') warnings.push('حالة العجلة: '+VSTATUS_LABEL[v.status]+'.');
-        if(vals.odometer !== null && vals.odometer < currentOdo(v.id)) warnings.push('قراءة العداد أقل من آخر قراءة معروفة ('+fmtNum(currentOdo(v.id))+').');
-        var key = warnings.join('|');
-        if(warnings.length && confirmKey !== key){ confirmKey = key; throw '⚠ '+warnings.join(' ')+' اضغط "تسجيل الحركة" مرة أخرى للتأكيد.'; }
-        var drv = resolveDriver(vals.driver);
+        if(v){
+          if(s && s.where === dir) warnings.push(dir === 'out' ? 'العجلة مسجّلة خارج الجامعة أصلاً.' : 'العجلة مسجّلة داخل الجامعة أصلاً.');
+          if(dir === 'out' && v.status && v.status !== 'active') warnings.push('حالة العجلة: '+VSTATUS_LABEL[v.status]+'.');
+        } else {
+          var inside = derived.extInside.some(function(e){ return e.key === key; });
+          if(dir === 'in' && inside) warnings.push('هذه العجلة مسجّلة داخل الجامعة أصلاً.');
+          if(dir === 'out' && !inside) warnings.push('لا يوجد تسجيل دخول لهذه العجلة.');
+        }
+        var wk = warnings.join('|');
+        if(warnings.length && confirmKey !== wk){ confirmKey = wk; throw '⚠ '+warnings.join(' ')+' اضغط "تسجيل الحركة" مرة أخرى للتأكيد.'; }
+        var drv = ext ? {driverId:'', driverName:vals.driver.trim()} : resolveDriver(vals.driver);
         var a = actor();
-        var ref = db.collection('movements').doc();
-        var data = {vehicleId:v.id, direction:vals.direction, driverId:drv.driverId, driverName:drv.driverName, locationId:vals.locationId,
-          at:nowISO(), odometer:vals.odometer, purpose:vals.direction === 'out' ? vals.purpose : '', note:vals.note, by:a.by, byName:a.byName};
-        var p = ref.set(data);
-        audit('movement.'+vals.direction, 'movements', ref.id, v.plate+' — '+(drv.driverName || ''));
-        return commit(p, (vals.direction === 'out' ? 'سُجّل خروج ' : 'سُجّل دخول ')+v.plate);
+        var label = v ? v.plate : external.plate;
+        return saveAttachment(vals.photo, 'movement').then(function(photoId){
+          var ref = db.collection('movements').doc();
+          var data = {vehicleId:v ? v.id : '', direction:dir, driverId:drv.driverId, driverName:drv.driverName, locationId:vals.locationId,
+            at:nowISO(), purpose:(dir === 'out' || ext) ? vals.purpose : '', note:vals.note, by:a.by, byName:a.byName};
+          if(external) data.external = external;
+          if(photoId) data.photoId = photoId;
+          audit('movement.'+dir, 'movements', ref.id, label+(external ? ' (خارجية)' : '')+' — '+(drv.driverName || ''));
+          return commit(ref.set(data), (dir === 'out' ? 'سُجّل خروج ' : 'سُجّل دخول ')+label);
+        });
       }
     });
   }
@@ -2550,23 +2625,27 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     };
   }
   /* loc: معرّف موقع واحد، أو مصفوفة مواقع (مواقع موظف الاستعلامات)، أو فارغ لكل المواقع */
-  function movementsReportSpec(from, to, loc){
+  /* byUid: تُضاف أيضاً الحركات التي سجّلها هذا الموظف في مواقع أخرى */
+  function movementsReportSpec(from, to, loc, byUid){
     var locs = !loc ? null : Array.isArray(loc) ? loc : [loc];
-    var movs = S.movements.filter(function(m){ return inRange(m.at, from, to) && (!locs || locs.indexOf(m.locationId) >= 0); }).sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); });
-    var vs = {}; movs.forEach(function(m){ vs[m.vehicleId] = 1; });
+    var movs = S.movements.filter(function(m){ return inRange(m.at, from, to) && (!locs || locs.indexOf(m.locationId) >= 0 || (byUid && m.by === byUid)); }).sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); });
+    var vs = {}; movs.forEach(function(m){ vs[m.external ? 'ext:'+extKey(m.external.plate) : m.vehicleId] = 1; });
     return {
       title:'سجل حركة العجلات', fileName:'movements-log',
       meta:[['الفترة', fmtDate(from)+' إلى '+fmtDate(to)], ['الموقع', locs ? locs.map(locationName).join('، ') : 'جميع المواقع']],
       stats:[{label:'مجموع الحركات', value:cNum(movs.length), total:true}, {label:'خروج', value:cNum(movs.filter(function(m){ return m.direction === 'out'; }).length)}, {label:'دخول', value:cNum(movs.filter(function(m){ return m.direction === 'in'; }).length)}, {label:'عدد العجلات', value:cNum(Object.keys(vs).length)}],
-      sections:[{title:'الحركات', headers:['الوقت','الاتجاه','العجلة','السائق','الموقع','العداد','الوجهة','ملاحظة','سجّلها'],
-        rows:movs.map(function(m){ return [fmtDT(m.at), m.direction === 'out' ? 'خروج' : 'دخول', vehicleLabel(vehicleById(m.vehicleId)), driverLabel(m.driverId, m.driverName), locationName(m.locationId), m.odometer ? cNum(m.odometer) : '', m.purpose, m.note, m.byName]; })}]
+      sections:[{title:'الحركات', headers:['الوقت','الاتجاه','العجلة','السائق','الموقع','الوجهة / الغرض','ملاحظة','صورة','سجّلها'],
+        rows:movs.map(function(m){
+          var note = [m.external && m.external.companion ? 'المرافق: '+m.external.companion : '', m.note || ''].filter(Boolean).join(' — ');
+          return [fmtDT(m.at), m.direction === 'out' ? 'خروج' : 'دخول', movVehicleLabel(m), driverLabel(m.driverId, m.driverName), locationName(m.locationId), m.purpose, note, m.photoId ? '📷' : '', m.byName];
+        })}]
     };
   }
   /* تقرير الحركة اليومية للاستعلامات: يوم واحد (YYYY-MM-DD) ضمن مواقع الموظف فقط */
-  function dailyMovementsSpec(dayISO, locIds){
+  function dailyMovementsSpec(dayISO, locIds, byUid){
     var p = String(dayISO).split('-');
     var day = new Date(Number(p[0]), Number(p[1])-1, Number(p[2])); // تاريخ محلي، لا UTC
-    var spec = movementsReportSpec(day, endOfDay(new Date(day)), locIds); // endOfDay يعدّل الكائن نفسه، فنمرّر نسخة
+    var spec = movementsReportSpec(day, endOfDay(new Date(day)), locIds, byUid); // endOfDay يعدّل الكائن نفسه، فنمرّر نسخة
     spec.title = 'تقرير الحركة اليومية — '+WEEKDAY_AR[day.getDay()]+' '+stripIsolates(fmtDate(day));
     spec.fileName = 'daily-movements-'+dayISO;
     spec.meta[0] = ['اليوم', fmtDate(day)];
@@ -2668,6 +2747,107 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
       this.queue.appendChild(el('div',{class:'row-between'},[el('h2',{text:'بانتظار تأييد المالية ('+q.length+')'}), el('span',{class:'badge', text:fmtIQD(sumBy(q, requestAmount))})]));
       this.queue.appendChild(q.length ? el('div',{class:'stack'}, q.map(requestItem)) : emptyNote('لا توجد مبالغ بانتظار التأييد.'));
       renderReport(financeReportSpec(tabState.financeMonth), this.summary);
+    }
+  };
+
+  /* ---------------- متابعة الاستعلامات (مدير الاستعلامات) ----------------
+     يتابع عمل موظفي الاستعلامات: نشاط كل موظف في اليوم المختار، والعجلات الخارجية
+     داخل الجامعة، وعجلات الجامعة خارجها، وسجل الحركات مع الصور، وتقرير قابل للطباعة. */
+  PANELS.monitor = {
+    build:function(root){
+      var self = this;
+      this.day = el('input',{id:'monDay', class:'input', type:'date', value:fmtISODate(new Date()), max:fmtISODate(new Date()), onchange:function(){ self.refresh(); }});
+      this.loc = el('select',{id:'monLoc', class:'input', onchange:function(){ self.refresh(); }});
+      this.emp = el('select',{id:'monEmp', class:'input', onchange:function(){ self.refresh(); }});
+      function field(label, input){ return el('div',{class:'field'},[el('label',{'for':input.id, text:label}), input]); }
+      this.stats = el('div',{class:'stat-grid'});
+      this.staff = el('div',{class:'card'});
+      this.ext = el('div',{class:'card'});
+      this.outs = el('div',{class:'card'});
+      this.log = el('div',{class:'card'});
+      this.reportBox = el('div',{hidden:true});
+      appendKids(root, [
+        role() === 'gatesup' ? clockCard() : null,
+        el('div',{class:'card no-print'},[
+          el('h2',{text:'متابعة عمل موظفي الاستعلامات'}),
+          el('div',{class:'form-grid'},[field('اليوم', this.day), field('الموقع', this.loc), field('الموظف', this.emp)]),
+          el('div',{class:'row'},[el('button',{class:'btn btn-primary', type:'button', id:'monReportBtn', text:'🖨 تقرير المتابعة', onclick:function(){
+            self.reportShown = true; self.showReport(); self.reportBox.scrollIntoView({behavior:'smooth', block:'start'});
+          }})])
+        ]),
+        this.stats, this.staff, this.ext, this.outs, this.log, this.reportBox
+      ]);
+    },
+    filters:function(){
+      var p = String(this.day.value || fmtISODate(new Date())).split('-');
+      var day = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+      return {day:day, from:day, to:endOfDay(new Date(day)), loc:this.loc.value, emp:this.emp.value};
+    },
+    data:function(){
+      var f = this.filters();
+      var movs = S.movements.filter(function(m){ return inRange(m.at, f.from, f.to) && (!f.loc || m.locationId === f.loc) && (!f.emp || m.by === f.emp); })
+        .sort(function(a,b){ return String(b.at).localeCompare(String(a.at)); });
+      var staff = S.users.filter(function(u){ return u.role === 'gate' && u.active !== false && (!f.emp || u.id === f.emp) && (!f.loc || (u.locations || []).indexOf(f.loc) >= 0 || movs.some(function(m){ return m.by === u.id; })); })
+        .map(function(u){
+          var mine = movs.filter(function(m){ return m.by === u.id; });
+          return {u:u, count:mine.length, outs:mine.filter(function(m){ return m.direction === 'out'; }).length, ins:mine.filter(function(m){ return m.direction === 'in'; }).length,
+            ext:mine.filter(function(m){ return m.external; }).length, last:mine.length ? mine[0].at : null};
+        }).sort(function(a,b){ return b.count - a.count || String(a.u.name).localeCompare(String(b.u.name),'ar'); });
+      return {f:f, movs:movs, staff:staff};
+    },
+    refresh:function(){
+      var self = this;
+      function fill(sel, options){ var cur = sel.value; clear(sel); options.forEach(function(o){ sel.appendChild(el('option',{value:o.value, text:o.label})); }); sel.value = cur; }
+      fill(this.loc, [opt('', 'جميع المواقع')].concat(locations().map(function(l){ return opt(l.id, l.name); })));
+      fill(this.emp, [opt('', 'جميع الموظفين')].concat(S.users.filter(function(u){ return u.role === 'gate'; }).sort(function(a,b){ return String(a.name).localeCompare(String(b.name),'ar'); }).map(function(u){ return opt(u.id, u.name); })));
+      var d = this.data();
+      var active = d.staff.filter(function(x){ return x.count > 0; }).length;
+      var outs = S.vehicles.map(function(v){ return derived.live[v.id]; }).filter(function(s){ return s && s.where === 'out'; }).sort(function(a,b){ return b.outMs - a.outMs; });
+      clear(this.stats);
+      appendKids(this.stats, [
+        statTile(d.movs.length, 'حركات اليوم', 'info'),
+        statTile(d.movs.filter(function(m){ return m.direction === 'out'; }).length, 'خروج', 'info'),
+        statTile(d.movs.filter(function(m){ return m.direction === 'in'; }).length, 'دخول', 'free'),
+        statTile(d.movs.filter(function(m){ return m.external && m.direction === 'in'; }).length, 'دخول عجلات خارجية', 'pending'),
+        statTile(active+' / '+d.staff.length, 'موظفون سجّلوا حركة', active ? 'free' : 'busy')
+      ]);
+      clear(this.staff);
+      this.staff.appendChild(el('div',{class:'row-between'},[el('h2',{text:'نشاط الموظفين — '+stripIsolates(fmtDate(d.f.day))}), el('span',{class:'faint', text:d.staff.length+' موظف'})]));
+      this.staff.appendChild(d.staff.length ? tableNode(['الموظف','الموقع','الوجبة','الحركات','خروج','دخول','عجلات خارجية','آخر حركة'], d.staff.map(function(x){
+        return [x.u.name, (x.u.locations || []).map(locationName).join('، ') || '—', x.u.shift || '—', String(x.count), String(x.outs), String(x.ins), String(x.ext), x.last ? fmtTime(x.last) : 'لا حركة'];
+      }), {rowClass:function(i){ return d.staff[i].count ? '' : 'row-warn'; }}) : emptyNote('لا يوجد موظفو استعلامات مطابقون.'));
+      clear(this.ext);
+      var ins = derived.extInside;
+      this.ext.appendChild(el('div',{class:'row-between'},[el('h2',{text:'عجلات من خارج الجامعة داخلها الآن'}), el('span',{class:'faint', text:ins.length+' عجلة'})]));
+      this.ext.appendChild(ins.length ? el('div',{class:'stack'}, ins.map(function(x){ return extInsideItem(x, false); })) : emptyNote('لا توجد عجلات خارجية داخل الجامعة.'));
+      clear(this.outs);
+      this.outs.appendChild(el('div',{class:'row-between'},[el('h2',{text:'عجلات الجامعة خارجها الآن'}), el('span',{class:'faint', text:outs.length+' عجلة'})]));
+      this.outs.appendChild(outs.length ? tableNode(['العجلة','السائق','خرجت','المدة','الوجهة'], outs.map(function(s){
+        return [vehicleLabel(s.vehicle), driverLabel(s.driverId, s.driverName), fmtDT(s.since), fmtDuration(s.outMs)+(s.late ? ' ⚠ متأخرة' : ''), s.purpose || '—'];
+      }), {rowClass:function(i){ return outs[i].late ? 'row-error' : ''; }}) : emptyNote('كل عجلات الجامعة داخلها.'));
+      clear(this.log);
+      this.log.appendChild(el('div',{class:'row-between'},[el('h2',{text:'سجل الحركات'}), el('span',{class:'faint', text:d.movs.length+' حركة'})]));
+      this.log.appendChild(d.movs.length ? el('div',{class:'stack'}, d.movs.slice(0, 200).map(movementItem)) : emptyNote('لا توجد حركات مطابقة.'));
+      if(this.reportShown) this.showReport();
+    },
+    showReport:function(){
+      var d = this.data();
+      var empName = d.f.emp ? ((S.users.find(function(u){ return u.id === d.f.emp; }) || {}).name || '') : 'جميع الموظفين';
+      renderReport({
+        title:'تقرير متابعة الاستعلامات — '+WEEKDAY_AR[d.f.day.getDay()]+' '+stripIsolates(fmtDate(d.f.day)), fileName:'gate-monitor-'+fmtISODate(d.f.day),
+        meta:[['اليوم', fmtDate(d.f.day)], ['الموقع', d.f.loc ? locationName(d.f.loc) : 'جميع المواقع'], ['الموظف', empName]],
+        stats:[{label:'الحركات', value:cNum(d.movs.length), total:true}, {label:'خروج', value:cNum(d.movs.filter(function(m){ return m.direction === 'out'; }).length)},
+          {label:'دخول', value:cNum(d.movs.filter(function(m){ return m.direction === 'in'; }).length)}, {label:'عجلات خارجية', value:cNum(d.movs.filter(function(m){ return m.external; }).length)}],
+        sections:[
+          {title:'نشاط الموظفين', headers:['الموظف','الموقع','الوجبة','الحركات','خروج','دخول','عجلات خارجية','آخر حركة'],
+            rows:d.staff.map(function(x){ return [x.u.name, (x.u.locations || []).map(locationName).join('، '), x.u.shift || '', cNum(x.count), cNum(x.outs), cNum(x.ins), cNum(x.ext), x.last ? fmtTime(x.last) : 'لا حركة']; })},
+          {title:'عجلات من خارج الجامعة داخلها الآن', headers:['العجلة','الصنف','السائق','المرافق','دخلت','الغرض'],
+            rows:derived.extInside.map(function(x){ return [x.plate, EXT_CATEGORY[x.category] || '', x.driverName, x.companion, fmtDT(x.since), x.purpose]; })},
+          {title:'الحركات', headers:['الوقت','الاتجاه','العجلة','السائق','الموقع','الوجهة / الغرض','صورة','سجّلها'],
+            rows:d.movs.slice().reverse().map(function(m){ return [fmtDT(m.at), m.direction === 'out' ? 'خروج' : 'دخول', movVehicleLabel(m), driverLabel(m.driverId, m.driverName), locationName(m.locationId), m.purpose, m.photoId ? '📷' : '', m.byName]; })}
+        ],
+        signs:['مدير الاستعلامات', 'مساعد رئيس الجامعة للشؤون الإدارية']
+      }, this.reportBox);
     }
   };
 
@@ -3089,6 +3269,7 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     {username:'fleet', name:'مدير الآليات (تجريبي)', role:'fleet'},
     {username:'supervisor', name:'مدير قسم الخدمات (تجريبي)', role:'supervisor'},
     {username:'gate', name:'موظف الاستعلامات (تجريبي)', role:'gate', locations:['gate-main']},
+    {username:'gatesup', name:'مدير الاستعلامات (تجريبي)', role:'gatesup'},
     {username:'finance', name:'موظف المالية (تجريبي)', role:'finance'},
     {username:'driver', name:'علي حسين', role:'driver', driverKey:0},
     {username:'viewer', name:'الإدارة العليا (تجريبي)', role:'viewer'}
@@ -3215,6 +3396,16 @@ table.data-table tfoot td{font-weight:800; background:var(--surface-2);}
     requests.push(Object.assign({id:'demo-req-a-1', type:'assist', vehicleId:'demo-veh-6', driverId:'demo-drv-0', driverName:names[0], status:'in_progress', description:'عطل في البطارية والعجلة لا تعمل (تجريبي)', location:'طريق كربلاء–الحلة قرب السيطرة', phone:'07801000000',
       history:[{status:'new', at:new Date(now - 2*3600000).toISOString(), by:'u_driver', byName:names[0], note:''},{status:'in_progress', at:new Date(now - 90*60000).toISOString(), by:'u_fleet', byName:F[1], note:'أُرسلت عجلة إسناد'}], createdAt:new Date(now - 2*3600000).toISOString()}, stamp0));
     requests.forEach(function(r){ Object.keys(r).forEach(function(k){ if(r[k] === undefined) delete r[k]; }); });
+    // عجلات من خارج الجامعة: سيارة العتبة دخلت وخرجت، ورافعة وولي أمر داخل الجامعة الآن
+    [['76543 ب كربلاء','atabah','كرار عباس','','إيصال مواد إنشائية لمشروع الكلية', 5, 2],
+     ['11223 أ بابل','crane','صادق محمد','حسين علي','نصب برج الإنارة', 3, null],
+     ['99881 ج كربلاء','parent','ولي أمر الطالبة زينب','','استلام الطالبة لظرف طارئ', 0.5, null]].forEach(function(e, i){
+      var inAt = now - e[5]*3600000;
+      movements.push(Object.assign({id:'demo-ext-in-'+i, vehicleId:'', direction:'in', driverId:'', driverName:e[2], locationId:'gate-main', at:new Date(inAt).toISOString(), purpose:e[4], note:'',
+        external:{plate:e[0], category:e[1], companion:e[3]}, by:who('u_gate'), byName:'موظف الاستعلامات (تجريبي)'}, stamp0));
+      if(e[6] !== null) movements.push(Object.assign({id:'demo-ext-out-'+i, vehicleId:'', direction:'out', driverId:'', driverName:e[2], locationId:'gate-main', at:new Date(now - e[6]*3600000).toISOString(), purpose:'انتهاء العمل', note:'',
+        external:{plate:e[0], category:e[1], companion:e[3]}, by:who('u_gate'), byName:'موظف الاستعلامات (تجريبي)'}, stamp0));
+    });
     return {drivers:drivers, vehicles:vehicles, movements:movements, requests:requests, driverPoints:points};
   }
   function demoOps(){

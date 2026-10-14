@@ -49,11 +49,11 @@ service cloud.firestore {
       allow delete: if hasRole(['admin']);
     }
 
-    // الحركة: من صلاحية الاستعلامات حصراً، في مواقعها فقط وباسمها.
+    // الحركة: من صلاحية الاستعلامات حصراً، وباسم الموظف الذي سجّلها.
     // (مدير النظام يضيف فقط حركات تجريبية demo:true من زر البيانات التجريبية)
     match /movements/{id} {
       allow read: if active();
-      allow create: if ((hasRole(['gate']) && request.resource.data.locationId in me().locations)
+      allow create: if ((hasRole(['gate']) && request.resource.data.locationId is string)
           || (hasRole(['admin']) && request.resource.data.demo == true))
         && request.resource.data.by == request.auth.uid
         && request.resource.data.direction in ['out', 'in'];
